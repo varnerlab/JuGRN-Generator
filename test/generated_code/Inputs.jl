@@ -1,8 +1,8 @@
 # ----------------------------------------------------------------------------------- #
-# Copyright (c) 2019 Varnerlab
-# Robert Frederick School of Chemical and Biomolecular Engineering
+# Copyright (c) 2021 Varnerlab
+# Robert Frederick Smith School of Chemical and Biomolecular Engineering
 # Cornell University, Ithaca NY 14850
-
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
@@ -21,34 +21,25 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 # ----------------------------------------------------------------------------------- #
+#
+# ----------------------------------------------------------------------------------- #
+# Function: calculate_input_array
+# Description: Calculate the simulation inputs at time t
+# Generated on: 2021-05-11T14:57:12.115
+#
+# Input arguments:
+# t::Float64 => Current time value (scalar) 
+# x::Array{Float64,1} => State array (number_of_species x 1) 
+# data_dictionary::Dict{String,Any} => Dictionary holding model parameters 
+#
+# Output arguments:
+# u::Array{Float64,1} => Input array (number_of_species x 1) at time t 
+# ----------------------------------------------------------------------------------- #
+function calculate_input_array(t::Float64,x::Array{Float64,1},data_dictionary::Dict{String,Any})
 
-# what is the root directory?
-_PATH_TO_ROOT = pwd()
+	# Initialize default - 
+	u_array = zeros(length(x))
 
-# system packages - these are required to be installed
-# if not then install them
-import Pkg
-Pkg.activate(_PATH_TO_ROOT)
-Pkg.instantiate()
-Pkg.update()
-
-using LinearAlgebra # pre-installed w/Julia
-using Statistics    # pre-installed w/Julia
-using DifferentialEquations
-using DelimitedFiles
-using JSON
-using ProgressMeter
-
-# includes -
-include("Types.jl")
-include("Kinetics.jl")
-include("Control.jl")
-include("Inputs.jl")
-include("Data.jl")
-include("SolveBalances.jl")
-include("Balances.jl")
-include("Utility.jl")
-include("Error.jl")
-
-# List any custom includes here ...
-# ...
+	# return - 
+	return u_array
+end

@@ -22,33 +22,22 @@
 # THE SOFTWARE.
 # ----------------------------------------------------------------------------------- #
 
-# what is the root directory?
-_PATH_TO_ROOT = pwd()
+# include -
+include("Include.jl")
 
-# system packages - these are required to be installed
-# if not then install them
-import Pkg
-Pkg.activate(_PATH_TO_ROOT)
-Pkg.instantiate()
-Pkg.update()
+# Script to solve the balance equations -
+time_start = 0.0
+time_stop = 120.0
+time_step_size = 0.01
 
-using LinearAlgebra # pre-installed w/Julia
-using Statistics    # pre-installed w/Julia
-using DifferentialEquations
-using DelimitedFiles
-using JSON
-using ProgressMeter
+# what is the host_type?
+host_type = :bacteria
 
-# includes -
-include("Types.jl")
-include("Kinetics.jl")
-include("Control.jl")
-include("Inputs.jl")
-include("Data.jl")
-include("SolveBalances.jl")
-include("Balances.jl")
-include("Utility.jl")
-include("Error.jl")
+# path to parameters -
+path_to_biophysical_constants_file = "./Default.json"
 
-# List any custom includes here ...
-# ...
+# Load the data dictionary (uses the default biophysical_constants file)
+data_dictionary = build_data_dictionary((time_start,time_stop,time_step_size), path_to_biophysical_constants_file, host_type)
+
+# Solve the model equations -
+(T,X) = SolveBalances(time_start,time_stop,time_step_size,data_dictionary)

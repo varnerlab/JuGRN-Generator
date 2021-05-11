@@ -9,6 +9,7 @@ const path_to_package = dirname(pathof(@__MODULE__))
 
 # my code -
 include("Types.jl")
+include("Extensions.jl")
 include("Macros.jl")
 include("Parser.jl")
 include("Problem.jl")
