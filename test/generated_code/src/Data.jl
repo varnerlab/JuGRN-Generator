@@ -25,7 +25,7 @@
 # ----------------------------------------------------------------------------------- #
 # Function: DataDictionary
 # Description: Holds simulation and model parameters as key => value pairs in a Julia Dict()
-# Generated on: 2021-05-11T14:57:12.115
+# Generated on: 2021-05-11T16:19:52.041
 #
 # Input arguments:
 # time_start::Float64 => Simulation start time value (scalar) 
@@ -146,12 +146,6 @@ function build_data_dictionary(time_span::Tuple{Float64,Float64,Float64}, path_t
 
 	# Dilution degrdation matrix - 
 	dilution_degradation_matrix = build_dilution_degradation_matrix(biophysical_constants_dictionary,species_symbol_type_array,degradation_modifier_array)
-
-	# Precompute the translation parameters - 
-	translation_parameter_array = precompute_translation_parameter_array(biophysical_constants_dictionary, protein_coding_length_array, time_constant_modifier_array, host_type)
-
-	# Precompute the kinetic limit of transcription - 
-	transcription_kinetic_limit_array = precompute_transcription_kinetic_limit_array(biophysical_constants_dictionary, gene_coding_length_array, gene_abundance_array, time_constant_modifier_array, host_type)
 
 	# Parameter name index array - 
 	parameter_name_mapping_array = [

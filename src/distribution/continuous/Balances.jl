@@ -63,7 +63,7 @@ end
 # Return arguments:
 # N/A - derivative array at current time step is filled in the function
 # ----------------------------------------------------------------------------------- #
-function AdjBalances(dx,x,data_dictionary,t)
+function AdjBalances(dx, x, data_dictionary, t)
 
     # look up the number of states -
     number_of_states = data_dictionary["number_of_states"]
@@ -73,18 +73,18 @@ function AdjBalances(dx,x,data_dictionary,t)
 
     # partition that state -
     state_array = x[1:number_of_states]
-    sensitivity_array = x[(number_of_states+1):end]
+    sensitivity_array = x[(number_of_states + 1):end]
 
     # call the balances -
-    dxdt_array = calculate_balances(t,state_array,data_dictionary)
+    dxdt_array = calculate_balances(t, state_array, data_dictionary)
 
     # Calculate the sensitivity states -
     local_data_dictionary = deepcopy(data_dictionary)
-    JM = calculate_jacobian(t,state_array,local_data_dictionary)
-    BM = calculate_bmatrix(t,state_array,local_data_dictionary)
+    JM = calculate_jacobian(t, state_array, local_data_dictionary)
+    BM = calculate_bmatrix(t, state_array, local_data_dictionary)
 
     # calulate the sensitivity state -
-    dsdt_array = JM*sensitivity_array+BM[:,parameter_index]
+    dsdt_array = JM * sensitivity_array + BM[:,parameter_index]
     r_array = [dxdt_array ; dsdt_array]
 
     # package -
@@ -107,30 +107,27 @@ end
 # Return arguments:
 # dxdt - derivative array at current time step
 # ----------------------------------------------------------------------------------- #
-function calculate_balances(t,x,data_dictionary)
+function calculate_balances(t, x, data_dictionary)
 
     # get the structure arrays from the data_dictionary -
     AM = data_dictionary["dilution_degradation_matrix"]
     SM = data_dictionary["stoichiometric_matrix"]
-
-    # what is my system size?
-    number_of_states = data_dictionary["number_of_states"]
-
+    
     # calculate the kinetics array -
-    kinetics_array = calculate_txtl_kinetics_array(t,x,data_dictionary)
+    kinetics_array = calculate_txtl_kinetics_array(t, x, data_dictionary)
 
     # calculate the control array -
-    transcription_control_array = calculate_transcription_control_array(t,x,data_dictionary)
-    translation_control_array = calculate_translation_control_array(t,x,data_dictionary)
+    transcription_control_array = calculate_transcription_control_array(t, x, data_dictionary)
+    translation_control_array = calculate_translation_control_array(t, x, data_dictionary)
 
     # control_array is the transcription and translation control arrays -
     control_array = [transcription_control_array ; translation_control_array]
 
     # modfiy the kinetics -
-    rV = kinetics_array.*control_array
+    rV = kinetics_array .* control_array
 
     # compute the dxdt vector -
-    dxdt = AM*x+SM*rV
+    dxdt = AM * x + SM * rV
 
     # return -
     return dxdt
@@ -150,7 +147,7 @@ end
 # Return arguments:
 # N/A - dx is filled in the function and returned to the caller
 # ----------------------------------------------------------------------------------- #
-function Balances(dx,x,data_dictionary,t)
+function Balances(dx, x, data_dictionary, t)
 
     # get the structure arrays from the data_dictionary -
     AM = data_dictionary["dilution_degradation_matrix"]
@@ -160,20 +157,20 @@ function Balances(dx,x,data_dictionary,t)
     number_of_states = data_dictionary["number_of_states"]
 
     # calculate the kinetics array -
-    kinetics_array = calculate_txtl_kinetics_array(t,x,data_dictionary)
+    kinetics_array = calculate_txtl_kinetics_array(t, x, data_dictionary)
 
     # calculate the control array -
-    transcription_control_array = calculate_transcription_control_array(t,x,data_dictionary)
-    translation_control_array = calculate_translation_control_array(t,x,data_dictionary)
+    transcription_control_array = calculate_transcription_control_array(t, x, data_dictionary)
+    translation_control_array = calculate_translation_control_array(t, x, data_dictionary)
 
     # control_array is the transcription and translation control arrays -
     control_array = [transcription_control_array ; translation_control_array]
 
     # modfiy the kinetics -
-    rV = kinetics_array.*control_array
+    rV = kinetics_array .* control_array
 
     # compute the dxdt vector -
-    dxdt = AM*x+SM*rV
+    dxdt = AM * x + SM * rV
 
     # package -
     for index = 1:number_of_states

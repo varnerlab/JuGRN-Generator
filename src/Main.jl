@@ -6,6 +6,17 @@ This model generation will be awesome. super awesome. It will be great. The best
 function make_julia_model(path_to_model_file::String, path_to_output_dir::String; 
     host_type::Symbol=:bacteria, model_type::Symbol=:continuous, control_function_generation::Bool=true)
 
+    # initialize -
+    src_component_set = Set{ProgramComponent}()
+    root_component_set = Set{ProgramComponent}()
+    network_component_set = Set{ProgramComponent}()
+
+    # ok, need to create the paths -
+    _PATH_TO_OUTPUT_SRC_DIR = joinpath(path_to_output_dir, "src")
+    _PATH_TO_ROOT_DIR = path_to_output_dir
+    _PATH_TO_OUTPUT_DATABASE_DIR = joinpath(_PATH_TO_OUTPUT_SRC_DIR, "database")
+    _PATH_TO_NETWORK_OUTPUT_DIR = joinpath(_PATH_TO_OUTPUT_SRC_DIR, "network")
+
     try
 
         # Load the statement_vector -
@@ -14,21 +25,17 @@ function make_julia_model(path_to_model_file::String, path_to_output_dir::String
         # Generate the problem object -
         problem_object = generate_problem_object(statement_vector)
 
-        # initialize the program set -
-        component_set = Set{ProgramComponent}()
-
         # Write the Inputs -
         program_component_inputs = build_inputs_buffer(problem_object)
-        push!(component_set, program_component_inputs)
+        push!(src_component_set, program_component_inputs)
 
         # Write the data_dictionary -
         program_component_data_dictionary = build_data_dictionary_buffer(problem_object, host_type)
-        push!(component_set, program_component_data_dictionary)
+        push!(src_component_set, program_component_data_dictionary)
 
-        # v1.0: We transfer a pre-baked Kinetics.jl -
         # Write the Kinetics ->
-        # program_component_kinetics = build_kinetics_buffer(problem_object)
-        # push!(component_set,program_component_kinetics)
+        program_component_kinetics = build_kinetics_buffer(problem_object)
+        push!(src_component_set, program_component_kinetics)
 
         # Write the Control functions -
         program_component_control = nothing
@@ -37,7 +44,7 @@ function make_julia_model(path_to_model_file::String, path_to_output_dir::String
         else
             program_component_control = build_blank_control_buffer(problem_object)
         end
-        push!(component_set, program_component_control)
+        push!(src_component_set, program_component_control)
 
         # v1.0: We are generating this matrix in code, as part of the data_dictionary build process -
         # Write the dilution_matrix --
@@ -50,39 +57,38 @@ function make_julia_model(path_to_model_file::String, path_to_output_dir::String
 
         # Write the stoichiometric_matrix --
         program_component_stoichiometric_matrix = generate_stoichiomteric_matrix_buffer(problem_object)
-        push!(component_set, program_component_stoichiometric_matrix)
+        push!(network_component_set, program_component_stoichiometric_matrix)
 
         # Dump the component_set to disk -
-        write_program_components_to_disk(path_to_output_dir, component_set)
+        write_program_components_to_disk(_PATH_TO_OUTPUT_SRC_DIR, src_component_set)
+        write_program_components_to_disk(_PATH_TO_NETWORK_OUTPUT_DIR, network_component_set)
 
         # Transfer distrubtion jl files to the output -> these files are shared between model types
-        transfer_distribution_files("$(path_to_package)/distribution", path_to_output_dir, ".jl")
+        transfer_distribution_files("$(path_to_package)/distribution", _PATH_TO_OUTPUT_SRC_DIR, ".jl")
 
         # Transfer model type specific files -
         if model_type == :continuous
 
             # transfer continuous files -
-            transfer_distribution_files("$(path_to_package)/distribution/continuous", path_to_output_dir, ".jl")
-            transfer_distribution_files("$(path_to_package)/distribution/continuous", path_to_output_dir, ".toml")
+            transfer_distribution_files("$(path_to_package)/distribution/continuous", _PATH_TO_OUTPUT_SRC_DIR, ".jl")
+            transfer_distribution_files("$(path_to_package)/distribution/continuous", _PATH_TO_ROOT_DIR, ".toml")
+            transfer_distribution_files("$(path_to_package)/distribution/continuous/root", _PATH_TO_ROOT_DIR, ".jl")
+            transfer_distribution_files("$(path_to_package)/distribution/continuous/database", _PATH_TO_OUTPUT_DATABASE_DIR, ".db")
 
         elseif model_type == :discrete
 
             # transfer discrete files -
-            transfer_distribution_files("$(path_to_package)/distribution/discrete", path_to_output_dir, ".jl")
+            # transfer_distribution_files("$(path_to_package)/distribution/discrete", path_to_output_dir, ".jl")
+            throw(error("Discrete model type not yet supported"))
         else
             throw(error("unsupported model_type. Expected {continuous,discrete} got $(model_type)"))
         end
 
-
-        # Transfer distibution JSON files to output -
-        transfer_distribution_files("$(path_to_package)/distribution", path_to_output_dir, ".json")
-
         # transfer the README files -
-        path_to_readme_file = splitdir(path_to_model_file)[1]
-        transfer_distribution_files("$(path_to_package)/distribution", path_to_readme_file, ".md")
+        transfer_distribution_files("$(path_to_package)/distribution", _PATH_TO_ROOT_DIR, ".md")
 
     catch error
-        throw(error)
+        rethrow(error)
     end
 end
 

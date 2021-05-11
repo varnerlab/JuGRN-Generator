@@ -1,8 +1,8 @@
 # ----------------------------------------------------------------------------------- #
-# Copyright (c) 2021 Varnerlab
-# Robert Frederick Smith School of Chemical and Biomolecular Engineering
+# Copyright (c) 2019 Varnerlab
+# Robert Frederick School of Chemical and Biomolecular Engineering
 # Cornell University, Ithaca NY 14850
-#
+
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
@@ -21,25 +21,46 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 # ----------------------------------------------------------------------------------- #
-#
-# ----------------------------------------------------------------------------------- #
-# Function: calculate_input_array
-# Description: Calculate the simulation inputs at time t
-# Generated on: 2021-05-11T14:57:12.115
-#
-# Input arguments:
-# t::Float64 => Current time value (scalar) 
-# x::Array{Float64,1} => State array (number_of_species x 1) 
-# data_dictionary::Dict{String,Any} => Dictionary holding model parameters 
-#
-# Output arguments:
-# u::Array{Float64,1} => Input array (number_of_species x 1) at time t 
-# ----------------------------------------------------------------------------------- #
-function calculate_input_array(t::Float64,x::Array{Float64,1},data_dictionary::Dict{String,Any})
+function _include_my_codes(path_to_src::String, fileNameArray::Array{String,1})
 
-	# Initialize default - 
-	u_array = zeros(length(x))
+    try
 
-	# return - 
-	return u_array
+        for file_name in fileNameArray
+            
+            path_to_load = joinpath(path_to_src, file_name)
+            include(path_to_load)
+        end
+
+    catch error
+        rethrow(error)
+    end
+
 end
+
+# get files from dir -
+searchdir(path,key) = filter(x -> contains(x, key), readdir(path))
+
+# what is the root directory?
+_PATH_TO_ROOT = pwd()
+_PATH_TO_SRC = joinpath(_PATH_TO_ROOT, "src")
+_PATH_TO_DATABASE = joinpath(_PATH_TO_SRC, "database")
+_PATH_TO_NETWORK = joinpath(_PATH_TO_SRC, "network")
+
+# system packages - these are required to be installed
+# if not then install them
+import Pkg
+Pkg.activate(_PATH_TO_ROOT)
+Pkg.instantiate()
+Pkg.update()
+
+using LinearAlgebra # pre-installed w/Julia
+using Statistics    # pre-installed w/Julia
+using DifferentialEquations
+using DelimitedFiles
+using JSON
+using ProgressMeter
+using SQLite
+
+# includes -
+my_src_codes_array = searchdir(_PATH_TO_SRC, ".jl")
+_include_my_codes(_PATH_TO_SRC, my_src_codes_array)
