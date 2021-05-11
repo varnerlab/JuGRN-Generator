@@ -386,7 +386,25 @@ function build_control_buffer(problem_object::ProblemObject)
 end
 
 # this function needs to swicth based upon the host type -
-function build_data_dictionary_buffer(problem_object::ProblemObject, host_flag::Symbol)
+function build_data_dictionary_buffer(intermediate_representation::Dict{String,Any})::ProgramComponent
+
+    # initialize -
+    buffer = Array{String,1}()
+    filename = "Data.jl"
+
+    try
+
+
+    
+
+
+    catch error
+        rethrow(error)
+    end
+
+end
+
+function build_data_dictionary_buffer_old(problem_object::ProblemObject, host_flag::Symbol)
 
     filename = "Data.jl"
 

@@ -4,20 +4,20 @@
 This model generation will be awesome. super awesome. It will be great. The best ever
 """
 function make_julia_model(path_to_model_file::String, path_to_output_dir::String; 
-    host_type::Symbol=:bacteria, model_type::Symbol=:continuous, control_function_generation::Bool=true)
+    host_type::Symbol=:bacteria, control_function_generation::Bool=true)
 
     # initialize -
     src_component_set = Set{ProgramComponent}()
     root_component_set = Set{ProgramComponent}()
     network_component_set = Set{ProgramComponent}()
 
-    # ok, need to create the paths -
-    _PATH_TO_OUTPUT_SRC_DIR = joinpath(path_to_output_dir, "src")
-    _PATH_TO_ROOT_DIR = path_to_output_dir
-    _PATH_TO_OUTPUT_DATABASE_DIR = joinpath(_PATH_TO_OUTPUT_SRC_DIR, "database")
-    _PATH_TO_NETWORK_OUTPUT_DIR = joinpath(_PATH_TO_OUTPUT_SRC_DIR, "network")
-
     try
+
+        # ok, need to create the paths -
+        _PATH_TO_OUTPUT_SRC_DIR = joinpath(path_to_output_dir, "src")
+        _PATH_TO_ROOT_DIR = path_to_output_dir
+        _PATH_TO_OUTPUT_DATABASE_DIR = joinpath(_PATH_TO_OUTPUT_SRC_DIR, "database")
+        _PATH_TO_NETWORK_OUTPUT_DIR = joinpath(_PATH_TO_OUTPUT_SRC_DIR, "network")
 
         # Load the statement_vector -
         statement_vector::Array{VGRNSentence,1} = parse_grn_file(path_to_model_file)
@@ -66,23 +66,11 @@ function make_julia_model(path_to_model_file::String, path_to_output_dir::String
         # Transfer distrubtion jl files to the output -> these files are shared between model types
         transfer_distribution_files("$(path_to_package)/distribution", _PATH_TO_OUTPUT_SRC_DIR, ".jl")
 
-        # Transfer model type specific files -
-        if model_type == :continuous
-
-            # transfer continuous files -
-            transfer_distribution_files("$(path_to_package)/distribution/continuous", _PATH_TO_OUTPUT_SRC_DIR, ".jl")
-            transfer_distribution_files("$(path_to_package)/distribution/continuous", _PATH_TO_ROOT_DIR, ".toml")
-            transfer_distribution_files("$(path_to_package)/distribution/continuous/root", _PATH_TO_ROOT_DIR, ".jl")
-            transfer_distribution_files("$(path_to_package)/distribution/continuous/database", _PATH_TO_OUTPUT_DATABASE_DIR, ".db")
-
-        elseif model_type == :discrete
-
-            # transfer discrete files -
-            # transfer_distribution_files("$(path_to_package)/distribution/discrete", path_to_output_dir, ".jl")
-            throw(error("Discrete model type not yet supported"))
-        else
-            throw(error("unsupported model_type. Expected {continuous,discrete} got $(model_type)"))
-        end
+        # transfer continuous files -
+        transfer_distribution_files("$(path_to_package)/distribution/continuous", _PATH_TO_OUTPUT_SRC_DIR, ".jl")
+        transfer_distribution_files("$(path_to_package)/distribution/continuous", _PATH_TO_ROOT_DIR, ".toml")
+        transfer_distribution_files("$(path_to_package)/distribution/continuous/root", _PATH_TO_ROOT_DIR, ".jl")
+        transfer_distribution_files("$(path_to_package)/distribution/continuous/database", _PATH_TO_OUTPUT_DATABASE_DIR, ".db")
 
         # transfer the README files -
         transfer_distribution_files("$(path_to_package)/distribution", _PATH_TO_ROOT_DIR, ".md")

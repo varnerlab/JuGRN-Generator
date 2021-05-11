@@ -1,0 +1,107 @@
+{
+    "system": {
+        "parameters": {
+            "RNAP": 0.07,
+            "RIBOSOME": 0.07,
+            "sigma70": 0.1,
+            "gluconate": 0.1
+        },
+        "host": "CF_PURE"
+    },
+    "list_of_species": [
+        {
+            "symbol": "gene_gntR",
+            "initial_condition": 5.0,
+            "sequence": "",
+            "compartment": "system",
+            "type": "gene"
+        },
+        {
+            "symbol": "gene_venus",
+            "initial_condition": 5.0,
+            "sequence": "",
+            "compartment": "system",
+            "type": "gene"
+        },
+        {
+            "symbol": "mRNA_gntR",
+            "initial_condition": 0.0,
+            "sequence": "",
+            "compartment": "system",
+            "type": "mRNA"
+        },
+        {
+            "symbol": "mRNA_venus",
+            "initial_condition": 0.0,
+            "sequence": "",
+            "compartment": "system",
+            "type": "mRNA"
+        },
+        {
+            "symbol": "P_gntR",
+            "initial_condition": 0.0,
+            "sequence": "",
+            "compartment": "system",
+            "type": "protein"
+        },
+        {
+            "symbol": "P_venus",
+            "initial_condition": 0.0,
+            "sequence": "",
+            "compartment": "system",
+            "type": "protein"
+        }
+    ],
+    "list_of_transcription_models": [
+        {
+            "title": "venus_promoter",
+            "RNAP_symbol": "RNAP",
+            "input": "gene_venus",
+            "output": "mRNA_venus",
+            "compartment": "system",
+            "list_of_activators": [
+                {
+                    "symbol": "sigma70",
+                    "type": "positive"
+                }
+            ],
+            "list_of_repressors": [
+                {
+                    "symbol": "P_gntR",
+                    "type": "negative",
+                    "agent": "gluconate"
+                }
+            ]
+        },
+        {
+            "title": "gntR_promoter",
+            "RNAP_symbol": "RNAP",
+            "input": "gene_gntR",
+            "output": "mRNA_gntR",
+            "compartment": "system",
+            "list_of_activators": [
+                {
+                    "symbol": "sigma70",
+                    "type": "positive"
+                }
+            ],
+            "list_of_repressors": []
+        }
+    ],
+    "list_of_translation_models": [
+        {
+            "ribosome_symbol": "RIBOSOME",
+            "title": "translation_mRNA_venus",
+            "output": "P_venus",
+            "input": "mRNA_venus",
+            "compartment": "system"
+        },
+        {
+            "ribosome_symbol": "RIBOSOME",
+            "title": "translation_mRNA_gntR",
+            "output": "P_gntR",
+            "input": "mRNA_gntR",
+            "compartment": "system"
+        }
+    ]
+}

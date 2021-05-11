@@ -25,7 +25,7 @@
 # ----------------------------------------------------------------------------------- #
 # Function: calculate_transcription_control_array
 # Description: Calculate the transcriptional control array at time t
-# Generated on: 2021-05-11T16:19:52.053
+# Generated on: 2021-05-11T16:24:54.872
 #
 # Input arguments:
 # t::Float64 => Current time value (scalar) 
@@ -97,7 +97,7 @@ end
 # ----------------------------------------------------------------------------------- #
 # Function: calculate_translation_control_array
 # Description: Calculate the translation control array at time t
-# Generated on: 2021-05-11T16:19:52.062
+# Generated on: 2021-05-11T16:24:54.881
 #
 # Input arguments:
 # t::Float64 => Current time value (scalar) 
