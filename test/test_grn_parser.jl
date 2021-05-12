@@ -5,4 +5,4 @@ using JuGRN
 path_to_net_file = "./test/data/Test.json"
 
 # parse -
-model_dictionary = parse_grn_file(path_to_net_file)
+ir = parse_grn_file(path_to_net_file)

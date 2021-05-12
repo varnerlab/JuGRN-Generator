@@ -21,25 +21,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 # ----------------------------------------------------------------------------------- #
-#
-# ----------------------------------------------------------------------------------- #
-# Function: calculate_input_array
-# Description: Calculate the simulation inputs at time t
-# Generated on: 2021-05-11T16:24:54.632
-#
-# Input arguments:
-# t::Float64 => Current time value (scalar) 
-# x::Array{Float64,1} => State array (number_of_species x 1) 
-# data_dictionary::Dict{String,Any} => Dictionary holding model parameters 
-#
-# Output arguments:
-# u::Array{Float64,1} => Input array (number_of_species x 1) at time t 
-# ----------------------------------------------------------------------------------- #
-function calculate_input_array(t::Float64,x::Array{Float64,1},data_dictionary::Dict{String,Any})
 
-	# Initialize default - 
-	u_array = zeros(length(x))
+function build_data_dictionary()::Dict{String,Any}
 
-	# return - 
-	return u_array
+	# initialize -
+	data_dictionary = Dict{String,Any}()
+
+	try
+		# Load the stoichiometric_matrix -
+	catch error
+		rethrow(error)
+	end
 end

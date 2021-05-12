@@ -11,43 +11,37 @@
     "list_of_species": [
         {
             "symbol": "gene_gntR",
-            "initial_condition": 5.0,
-            "sequence": "",
+            "sequence": "/Users/jeffreyvarner/Desktop/julia_work/JuGRN-Generator/test/data/seq/gene.fna",
             "compartment": "system",
             "type": "gene"
         },
         {
             "symbol": "gene_venus",
-            "initial_condition": 5.0,
-            "sequence": "",
+            "sequence": "/Users/jeffreyvarner/Desktop/julia_work/JuGRN-Generator/test/data/seq/gene.fna",
             "compartment": "system",
             "type": "gene"
         },
         {
             "symbol": "mRNA_gntR",
-            "initial_condition": 0.0,
             "sequence": "",
             "compartment": "system",
             "type": "mRNA"
         },
         {
             "symbol": "mRNA_venus",
-            "initial_condition": 0.0,
             "sequence": "",
             "compartment": "system",
             "type": "mRNA"
         },
         {
             "symbol": "P_gntR",
-            "initial_condition": 0.0,
-            "sequence": "",
+            "sequence": "/Users/jeffreyvarner/Desktop/julia_work/JuGRN-Generator/test/data/seq/protein.faa",
             "compartment": "system",
             "type": "protein"
         },
         {
             "symbol": "P_venus",
-            "initial_condition": 0.0,
-            "sequence": "",
+            "sequence": "/Users/jeffreyvarner/Desktop/julia_work/JuGRN-Generator/test/data/seq/protein.faa",
             "compartment": "system",
             "type": "protein"
         }

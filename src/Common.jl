@@ -1,7 +1,3 @@
-function contains(string, token)
-    return occursin(token, string)
-end
-
 function write_program_components_to_disk(file_path::String, set_of_program_components::Set{ProgramComponent})
 
     # check - do we have the file path?
@@ -104,17 +100,46 @@ function transfer_distribution_files(path_to_distribution_files::String,
     end
 end
 
-function number_of_species_of_type(list_of_species::Array{SpeciesObject}, species_type::Symbol)
+function move_existing_project_at_path(path_to_existing_project::String)::Bool
 
-    number_of_species = 0
-    for species_object in list_of_species
-        local_species_type = species_object.species_type
-        if (local_species_type == species_type)
-            number_of_species = number_of_species + 1
+    # we are getting called *if* we already know there is a dir conflict -
+    # if this is getting called, we have an existing dir where the user wants to write code.
+    # we need then create a new dir called *.0, and mv the offending dir to this location?
+    # return true if this worked, otherwise false -
+
+    # parent and child dir that we are generating into -
+    parent_dir = dirname(path_to_existing_project)
+    child_dir = basename(path_to_existing_project)
+    destination_path = ""
+
+    # current backup index  -
+    current_backup_index = 0
+
+    # do we already have the destination?
+    loop_flag = true
+    while loop_flag
+
+         # make a destination path -
+        destination_path = joinpath(parent_dir, "$(child_dir).$(current_backup_index)")
+
+        # we don't have this dir, we are done -
+        if (isdir(destination_path) == false)
+            loop_flag = false
         end
+
+        # ok, looks like we already have this dir, update the counter -
+        current_backup_index = current_backup_index + 1
     end
 
-    return number_of_species
+    # mv -
+    mv(path_to_existing_project, destination_path)
+
+    # check -
+    if (isdir(destination_path) == false)
+        return false
+    end
+
+    return true
 end
 
 function generate_degradation_matrix_buffer(problem_object::ProblemObject)
@@ -220,67 +245,6 @@ function generate_stoichiomteric_matrix_buffer(problem_object::ProblemObject)
     return (program_component)
 end
 
-function extract_species_of_type(list_of_species::Array{SpeciesObject}, species_type::Symbol)
-
-  # initialize -
-    local_list_of_species = SpeciesObject[]
-    for species_object in list_of_species
-
-        local_species_type = species_object.species_type
-        if (species_type == local_species_type)
-            push!(local_list_of_species, species_object)
-        end
-    end
-
-    return local_list_of_species
-end
-
-function is_species_a_target_in_connection_list(list_of_connections::Array{ConnectionObject}, target_species::SpeciesObject, connection_type::Symbol)
-
-    target_connection_list = ConnectionObject[]
-    for connection_object in list_of_connections
-
-        @show connection_object
-
-    # get targets -
-        local_target_set = connection_object.connection_target_set
-        local_connection_type = connection_object.connection_type
-        if (local_connection_type == connection_type && does_set_contain_species(local_target_set, target_species) == true)
-
-            push!(target_connection_list, connection_object)
-        end
-    end
-
-    return target_connection_list
-end
-
-
-function does_set_contain_species(species_set::Array{SpeciesObject}, species_object::SpeciesObject)
-
-  # initilize -
-    does_set_contains_species = false
-    for local_species_object in species_set
-
-    # get type and name -
-        local_species_type = local_species_object.species_type
-        local_species_symbol = local_species_object.species_symbol
-
-    # get the test symbol and type -
-        test_species_type = species_object.species_type
-        test_species_symbol = species_object.species_symbol
-
-        if (local_species_type == test_species_type && test_species_symbol == local_species_symbol)
-
-            @show (local_species_type, local_species_symbol, test_species_type, test_species_symbol)
-
-            does_set_contains_species = true
-            return does_set_contains_species
-        end
-    end
-
-    return does_set_contains_species
-end
-
 function generate_dilution_matrix_buffer(problem_object::ProblemObject)
 
   # list of species -
@@ -324,28 +288,47 @@ function generate_dilution_matrix_buffer(problem_object::ProblemObject)
     return (program_component)
 end
 
-function partition!(list_of_species::Array{SpeciesObject})
+function include_function(path_to_src_file::String)::Array{String,1}
 
-  # ok, frist, we need to split into balanced and unbalanced lists -
-    list_of_gene_indexes::Array{Int} = Int[]
-    list_of_mRNA_indexes::Array{Int} = Int[]
-    list_of_protein_indexes::Array{Int} = Int[]
+    # create src_buffer -
+    src_buffer::Array{String,1} = String[]
+    
+    # read -
+    open(path_to_src_file, "r") do src_file
+        for line in eachline(src_file)
 
-    for (index, species_object) in enumerate(list_of_species)
-
-        species_type::Symbol = species_object.species_type
-        if (species_type == :gene)
-            push!(list_of_gene_indexes, index)
-        elseif (species_type == :mrna)
-      push!(list_of_mRNA_indexes, index)
-    elseif (species_type == :protein)
-      push!(list_of_protein_indexes, index)
+            new_line_with_line_ending = line * "\n"
+            push!(src_buffer, new_line_with_line_ending)
         end
     end
 
-  # combine -
-    permutation_index_array = vcat(list_of_gene_indexes, list_of_mRNA_indexes, list_of_protein_indexes)
+    # return the raw buffer -
+    return src_buffer
+end
 
-  # permute the array -
-    permute!(list_of_species, permutation_index_array)
+function include_function(path_to_src_file::String, prefix_pad_string::String)::String
+
+    # create src_buffer -
+    src_buffer::Array{String,1} = String[]
+
+    # read -
+    open(path_to_src_file, "r") do src_file
+        for line in eachline(src_file)
+
+            new_line_with_line_ending = line * "\n"
+            push!(src_buffer, new_line_with_line_ending)
+        end
+    end
+
+    string_value = ""
+    for line in src_buffer
+        string_value *= prefix_pad_string * line
+    end
+
+    return src_buffer
+end
+
+function _request_user_input(prompt::String="")::String
+    print(prompt)
+    return chomp(readline())
 end

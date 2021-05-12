@@ -41,6 +41,41 @@ function build_function_header_buffer(comment_dictionary)
     return buffer
 end
 
+function build_copyright_header_buffer()
+    
+    # What is the current year?
+    current_year = string(Dates.year(now()))
+
+    # Build header -
+    buffer = ""
+    buffer *= "# ----------------------------------------------------------------------------------- #\n"
+    buffer *= "# Copyright (c) $(current_year) Varnerlab\n"
+    buffer *= "# Robert Frederick Smith School of Chemical and Biomolecular Engineering\n"
+    buffer *= "# Cornell University, Ithaca NY 14850\n"
+    buffer *= "#\n"
+    buffer *= "# Permission is hereby granted, free of charge, to any person obtaining a copy\n"
+    buffer *= "# of this software and associated documentation files (the \"Software\"), to deal\n"
+    buffer *= "# in the Software without restriction, including without limitation the rights\n"
+    buffer *= "# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n"
+    buffer *= "# copies of the Software, and to permit persons to whom the Software is\n"
+    buffer *= "# furnished to do so, subject to the following conditions:\n"
+    buffer *= "#\n"
+    buffer *= "# The above copyright notice and this permission notice shall be included in\n"
+    buffer *= "# all copies or substantial portions of the Software.\n"
+    buffer *= "#\n"
+    buffer *= "# THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n"
+    buffer *= "# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n"
+    buffer *= "# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n"
+    buffer *= "# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n"
+    buffer *= "# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n"
+    buffer *= "# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\n"
+    buffer *= "# THE SOFTWARE.\n"
+    buffer *= "# ----------------------------------------------------------------------------------- #\n"
+
+    # return -
+    return buffer
+end
+
 function build_copyright_header_buffer(problem_object::ProblemObject)
 
   # What is the current year?
@@ -191,8 +226,19 @@ end
 
 function build_control_buffer(problem_object::ProblemObject)
 
+    # initialize -
     filename = "Control.jl"
+    
 
+    try
+
+
+
+    catch error
+      rethrow(error)
+    end
+    
+    
     # build the header -
     header_buffer = build_copyright_header_buffer(problem_object)
 
@@ -214,146 +260,7 @@ function build_control_buffer(problem_object::ProblemObject)
     buffer *= function_comment_buffer
     buffer *= "function calculate_transcription_control_array(t::Float64,x::Array{Float64,1},data_dictionary::Dict{String,Any})\n"
     buffer *= "\n"
-    buffer *= "\t# initialize the control - \n"
-    buffer *= "\tcontrol_array = zeros($(length(list_of_genes)))\n"
-    buffer *= "\n"
-
-    buffer *= "\t# Alias the species - \n"
-    for (index, species_object) in enumerate(list_of_species)
-
-    # Grab the symbol -
-        species_symbol = species_object.species_symbol
-
-    # write the record -
-        buffer *= "\t$(species_symbol) = x[$(index)]\n"
-    end
-
-    buffer *= "\n"
-    buffer *= "\t# Alias the binding parameters - \n"
-    buffer *= "\tbinding_parameter_dictionary = data_dictionary[\"binding_parameter_dictionary\"]\n"
-    for (index, gene_object) in enumerate(list_of_genes)
-
-    # get gene symbol -
-        gene_symbol = gene_object.species_symbol
-
-    # connections -
-        activating_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :activate)
-        inhibiting_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :inhibit)
-
-    # activating connections -
-        buffer *= iterate_binding_control_connection(gene_object, activating_connections)
-
-    # inhibiting_connections -
-        buffer *= iterate_binding_control_connection(gene_object, inhibiting_connections)
-    end
-
-    buffer *= "\n"
-    buffer *= "\t# Alias the control function parameters - \n"
-    buffer *= "\tcontrol_parameter_dictionary = data_dictionary[\"control_parameter_dictionary\"]\n"
-    for (index, gene_object) in enumerate(list_of_genes)
-
-    # get gene symbol -
-        gene_symbol = gene_object.species_symbol
-
-    # connections -
-        activating_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :activate)
-        inhibiting_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :inhibit)
-
-    # get the RNAp binding symbol out -
-        buffer *= "\tW_$(gene_symbol)_RNAP = control_parameter_dictionary[\"W_$(gene_symbol)_RNAP\"]\n"
-
-    # activating -
-        buffer *= iterate_control_control_connection(gene_object, activating_connections)
-
-    # inhibting -
-        buffer *= iterate_control_control_connection(gene_object, inhibiting_connections)
-    end
-
-    buffer *= "\n"
-
-  # get list of genes -
-    for (gene_index, gene_object) in enumerate(list_of_genes)
-
-    # get gene symbol -
-        gene_symbol = gene_object.species_symbol
-
-    # connections -
-        activating_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :activate)
-        inhibiting_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :inhibit)
-
-    # generate the binding functions -
-        list_of_all_connections = ConnectionObject[]
-        append!(list_of_all_connections, activating_connections)
-        append!(list_of_all_connections, inhibiting_connections)
-        for (index, connection_object) in enumerate(list_of_all_connections)
-
-      # actor -
-            actor_list = connection_object.connection_actor_set
-            connection_symbol = connection_object.connection_symbol
-
-            buffer *= "\t# Transfer function target:$(gene_symbol) actor:$(connection_symbol)\n"
-            buffer *= "\tactor_set_$(gene_symbol)_$(connection_symbol) = [\n"
-            for actor_object in actor_list
-
-                actor_symbol = actor_object.species_symbol
-                buffer *= "\t\tprotein_$(actor_symbol)\n"
-            end
-
-            buffer *= "\t]\n"
-            buffer *= "\tactor = prod(actor_set_$(gene_symbol)_$(connection_symbol))\n"
-            buffer *= "\tb_$(gene_symbol)_$(connection_symbol) = (actor^(n_$(gene_symbol)_$(connection_symbol)))/"
-            buffer *= "(K_$(gene_symbol)_$(connection_symbol)^(n_$(gene_symbol)_$(connection_symbol))+actor^(n_$(gene_symbol)_$(connection_symbol)))\n"
-            buffer *= "\n"
-        end
-
-        buffer *= "\t# Control function for $(gene_symbol) - \n"
-        buffer *= "\tcontrol_array[$(gene_index)] = ("
-        numerator = ""
-
-        if (isempty(activating_connections) == true)
-            buffer *= "W_$(gene_symbol)_RNAP"
-        else
-
-            numerator *= "W_$(gene_symbol)_RNAP+"
-            for connection_object in activating_connections
-        # actor -
-                connection_symbol = connection_object.connection_symbol
-                numerator *= "W_$(gene_symbol)_$(connection_symbol)*b_$(gene_symbol)_$(connection_symbol)+"
-            end
-            buffer *= numerator[1:end - 1]
-        end
-
-        buffer *= ")/(1+W_$(gene_symbol)_RNAP"
-
-        if (isempty(activating_connections) == false)
-            demoninator = ""
-            for connection_object in activating_connections
-        # actor -
-                connection_symbol = connection_object.connection_symbol
-                demoninator *= "+W_$(gene_symbol)_$(connection_symbol)*b_$(gene_symbol)_$(connection_symbol)"
-            end
-
-            buffer *= demoninator[1:end]
-        end
-
-    # ok - do we have inhibitory statements?
-        if (isempty(inhibiting_connections) == true)
-            buffer *= ")\n"
-            buffer *= "\n"
-        else
-
-            demoninator = ""
-            for connection_object in inhibiting_connections
-        # actor -
-                connection_symbol = connection_object.connection_symbol
-                demoninator *= "+W_$(gene_symbol)_$(connection_symbol)*b_$(gene_symbol)_$(connection_symbol)"
-            end
-
-            buffer *= demoninator[1:end]
-            buffer *= ")\n"
-            buffer *= "\n"
-        end
-    end
+    
 
     buffer *= "\t# return - \n"
     buffer *= "\treturn control_array\n"
@@ -394,10 +301,37 @@ function build_data_dictionary_buffer(intermediate_representation::Dict{String,A
 
     try
 
+        # build the header -
+        header_buffer = build_copyright_header_buffer()
+        +(buffer,header_buffer; suffix="\n")
+        +(buffer,"function build_data_dictionary()::Dict{String,Any}";suffix="\n")
+        +(buffer,"\n")
+        +(buffer,"# initialize -";prefix="\t",suffix="\n")
+        +(buffer,"data_dictionary = Dict{String,Any}()"; prefix="\t",suffix="\n")
+        +(buffer,"\n")
+        +(buffer,"try"; prefix="\t",suffix="\n")
+        +(buffer,"\n")
+        +(buffer,"# Load the stoichiometric_matrix -"; prefix="\t\t",suffix="\n")
+        +(buffer,"stoichiometric_matrix = readdlm(\"./network/Network.dat\")";prefix="\t\t",suffix="\n")
+        +(buffer,"data_dictionary[\"stoichiometric_matrix\"] = stoichiometric_matrix"; suffix="\n",prefix="\t\t")
+        +(buffer,"return data_dictionary";prefix="\t\t",suffix="\n")
+        +(buffer,"\n")
+        +(buffer,"catch error"; prefix="\t",suffix="\n")
+        +(buffer,"rethrow(error)"; prefix="\t\t",suffix="\n")
+        +(buffer,"end"; prefix="\t",suffix="\n")
+        +(buffer,"end";suffix="\n")
 
-    
+        # collapse -
+        flat_buffer = ""
+        [flat_buffer *= line for line in buffer]
 
+        # build the component -
+        program_component::ProgramComponent = ProgramComponent()
+        program_component.filename = filename
+        program_component.buffer = flat_buffer
 
+        # return -
+        return (program_component)
     catch error
         rethrow(error)
     end
@@ -408,7 +342,7 @@ function build_data_dictionary_buffer_old(problem_object::ProblemObject, host_fl
 
     filename = "Data.jl"
 
-  # build the header -
+    # build the header -
     header_buffer = build_copyright_header_buffer(problem_object)
 
   # get the comment buffer -
