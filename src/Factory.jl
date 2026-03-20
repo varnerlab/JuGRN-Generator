@@ -18,10 +18,7 @@ function build_julia_model_object(path_to_model_file::String, path_to_output_dir
     defaults_file_name::String="Defaults.toml")::VLJuliaModelObject
 
     # Check: is path_to_model_file legit?
-    check_result = is_file_path_ok(path_to_model_file)
-    if (isnothing(check_result.value) == false)
-        return check_result
-    end
+    is_file_path_ok(path_to_model_file)
 
     # Check: do we have a trailing slash on the path_to_output_dir?
     last_char = path_to_output_dir[end]
@@ -62,10 +59,7 @@ function build_julia_model_object(path_to_model_file::String, path_to_output_dir
     if (isfile(path_to_defaults_file) == false)
 
         # ok, we do not have a defaults file, so lets build one, and let the user know -
-        generate_defaults_result = generate_default_project_file(path_to_defaults_file)
-        if (isnothing(generate_defaults_result.value) == false)
-            return generate_defaults_result
-        end
+        generate_default_project_file(path_to_defaults_file)
 
         # let the user know that we have generated a new Defaults.toml file -
         @info "We generated Defaults.toml using the generate_default_project_file function, see the help system in the REPL"

@@ -68,7 +68,7 @@ function include_function(path_to_src_file::String, prefix_pad_string::String)::
         string_value *= prefix_pad_string*line
     end
 
-    return src_buffer
+    return string_value
 end
 
 function _request_user_input(prompt::String="")::String

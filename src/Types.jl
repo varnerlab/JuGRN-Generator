@@ -46,7 +46,7 @@ end
 
 mutable struct ProblemObject
 
-    configuration_dictionary::Dict{String,Any}
+    configuration_dictionary::AbstractDict{String,Any}
     list_of_species::Array{SpeciesObject,1}
     list_of_connections::Array{ConnectionObject,1}
 

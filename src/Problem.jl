@@ -1,3 +1,100 @@
+function generate_problem_object(intermediate_representation::Dict{String,Any})
+
+    # Initialize -
+    problem_object::ProblemObject = ProblemObject()
+
+    # Load the base configuration -
+    path_to_configuration_file = "$(path_to_package)/configuration/Configuration.json"
+    config_dict = Dict{String,Any}(JSON.parsefile(path_to_configuration_file))
+
+    # Get the raw model from the JSON -
+    raw_model = intermediate_representation["raw_model"]
+    species_table = intermediate_representation["model_species_table"]
+
+    # Store system parameters and host type in config -
+    if haskey(raw_model, "system")
+        system_dict = raw_model["system"]
+        config_dict["system_parameters"] = Dict{String,Any}(system_dict["parameters"])
+        config_dict["host_type"] = string(system_dict["host"])
+    end
+
+    # Build species list from JSON species table (already typed) -
+    list_of_species = SpeciesObject[]
+    for row in eachrow(species_table)
+        species_type = row.type == :mRNA ? :mrna : row.type  # normalize mRNA -> mrna
+        push!(list_of_species, SpeciesObject(species_type, string(row.symbol)))
+    end
+    partition!(list_of_species)
+
+    # Compute sequence lengths from FASTA records -
+    gene_sequence_lengths = Dict{String,Float64}()
+    protein_sequence_lengths = Dict{String,Float64}()
+    for row in eachrow(species_table)
+        if !ismissing(row.sequence) && isa(row.sequence, FASTA.Record)
+            seq_length = Float64(length(FASTA.sequence(row.sequence)))
+            if row.type == :gene
+                gene_sequence_lengths[string(row.symbol)] = seq_length
+            elseif row.type == :protein
+                protein_sequence_lengths[string(row.symbol)] = seq_length
+            end
+        end
+    end
+    config_dict["gene_sequence_lengths"] = gene_sequence_lengths
+    config_dict["protein_sequence_lengths"] = protein_sequence_lengths
+
+    # Build connections from transcription models -
+    list_of_connections = ConnectionObject[]
+    if haskey(raw_model, "list_of_transcription_models")
+        for tx_model in raw_model["list_of_transcription_models"]
+
+            # target gene is the input of this transcription model -
+            target_gene_symbol = string(tx_model["input"])
+            target_species = SpeciesObject(:gene, target_gene_symbol)
+
+            # process activators -
+            if haskey(tx_model, "list_of_activators")
+                for activator in tx_model["list_of_activators"]
+                    connection = ConnectionObject()
+                    actor_symbol = string(activator["symbol"])
+                    connection.connection_symbol = actor_symbol
+                    connection.connection_actor_set = [SpeciesObject(:protein, actor_symbol)]
+                    connection.connection_target_set = [target_species]
+                    connection.connection_type = :activate
+                    push!(list_of_connections, connection)
+                end
+            end
+
+            # process repressors -
+            if haskey(tx_model, "list_of_repressors")
+                for repressor in tx_model["list_of_repressors"]
+                    connection = ConnectionObject()
+                    actor_symbol = string(repressor["symbol"])
+                    connection.connection_symbol = actor_symbol
+                    connection.connection_actor_set = [SpeciesObject(:protein, actor_symbol)]
+                    connection.connection_target_set = [target_species]
+                    connection.connection_type = :inhibit
+                    push!(list_of_connections, connection)
+                end
+            end
+        end
+    end
+
+    # Store transcription and translation models for richer code generation -
+    if haskey(raw_model, "list_of_transcription_models")
+        config_dict["list_of_transcription_models"] = raw_model["list_of_transcription_models"]
+    end
+    if haskey(raw_model, "list_of_translation_models")
+        config_dict["list_of_translation_models"] = raw_model["list_of_translation_models"]
+    end
+
+    # Set on problem_object -
+    problem_object.configuration_dictionary = config_dict
+    problem_object.list_of_species = list_of_species
+    problem_object.list_of_connections = list_of_connections
+
+    return problem_object
+end
+
 function generate_problem_object(statement_vector::Array{VGRNSentence})
 
     # Initilize an empty problem object -
@@ -22,7 +119,7 @@ function generate_problem_object(statement_vector::Array{VGRNSentence})
     return problem_object
 end
 
-function build_connection_list(statement_vector::Array{VGRNSentence,1},configuration_dictionary::Dict{String,Any})
+function build_connection_list(statement_vector::Array{VGRNSentence,1}, configuration_dictionary::AbstractDict{String,Any})
 
   # initialize -
   list_of_connections = ConnectionObject[]
@@ -221,8 +318,6 @@ function recursive_species_parser!(sentence_char_array::Array{Char},list_of_symb
     if (isempty(biological_symbol_cache) == false)
       push!(list_of_symbols,String(biological_symbol_cache))
     end
-
-    @show sentence_char_array
 
     # ok, so we should be ready for another dive -
     recursive_species_parser!(sentence_char_array,list_of_symbols)

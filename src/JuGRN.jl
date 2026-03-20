@@ -15,6 +15,9 @@ export write_program_components_to_disk
 # factory -
 export build_julia_model_object
 
+# template generation -
+export generate_json_template
+
 # types -
 export VLJuliaModelObject
 

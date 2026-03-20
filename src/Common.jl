@@ -1,3 +1,70 @@
+function partition!(list_of_species::Array{SpeciesObject})::Array{SpeciesObject}
+
+    genes = filter(s -> s.species_type == :gene, list_of_species)
+    mRNAs = filter(s -> s.species_type == :mrna, list_of_species)
+    proteins = filter(s -> s.species_type == :protein, list_of_species)
+
+    empty!(list_of_species)
+    append!(list_of_species, genes)
+    append!(list_of_species, mRNAs)
+    append!(list_of_species, proteins)
+
+    return list_of_species
+end
+
+function number_of_species_of_type(list_of_species::Array{SpeciesObject}, species_type::Symbol)::Int
+    return count(s -> s.species_type == species_type, list_of_species)
+end
+
+function extract_species_of_type(list_of_species::Array{SpeciesObject}, species_type::Symbol)::Array{SpeciesObject}
+    return filter(s -> s.species_type == species_type, list_of_species)
+end
+
+function is_species_a_target_in_connection_list(list_of_connections::Array{ConnectionObject}, target_species::SpeciesObject, connection_type::Symbol)::Array{ConnectionObject}
+
+    matching_connections = ConnectionObject[]
+    target_symbol = target_species.species_symbol
+    for connection_object in list_of_connections
+        if connection_object.connection_type == connection_type
+            for target_object in connection_object.connection_target_set
+                if target_object.species_symbol == target_symbol
+                    push!(matching_connections, connection_object)
+                    break
+                end
+            end
+        end
+    end
+
+    return matching_connections
+end
+
+function is_file_path_ok(path_to_file::String)
+    if isfile(path_to_file) == false
+        throw(ArgumentError("File path $(path_to_file) does not exist or is not accessible."))
+    end
+    return nothing
+end
+
+function generate_default_project_file(path_to_defaults_file::String)
+
+    default_content = """
+    [time]
+    start = 0.0
+    stop = 10.0
+    step = 0.1
+
+    [solver]
+    abstol = 1e-9
+    reltol = 1e-6
+    """
+
+    open(path_to_defaults_file, "w") do f
+        write(f, default_content)
+    end
+
+    return nothing
+end
+
 function write_program_components_to_disk(file_path::String, set_of_program_components::Set{ProgramComponent})
 
     # check - do we have the file path?
@@ -288,47 +355,3 @@ function generate_dilution_matrix_buffer(problem_object::ProblemObject)
     return (program_component)
 end
 
-function include_function(path_to_src_file::String)::Array{String,1}
-
-    # create src_buffer -
-    src_buffer::Array{String,1} = String[]
-    
-    # read -
-    open(path_to_src_file, "r") do src_file
-        for line in eachline(src_file)
-
-            new_line_with_line_ending = line * "\n"
-            push!(src_buffer, new_line_with_line_ending)
-        end
-    end
-
-    # return the raw buffer -
-    return src_buffer
-end
-
-function include_function(path_to_src_file::String, prefix_pad_string::String)::String
-
-    # create src_buffer -
-    src_buffer::Array{String,1} = String[]
-
-    # read -
-    open(path_to_src_file, "r") do src_file
-        for line in eachline(src_file)
-
-            new_line_with_line_ending = line * "\n"
-            push!(src_buffer, new_line_with_line_ending)
-        end
-    end
-
-    string_value = ""
-    for line in src_buffer
-        string_value *= prefix_pad_string * line
-    end
-
-    return src_buffer
-end
-
-function _request_user_input(prompt::String="")::String
-    print(prompt)
-    return chomp(readline())
-end

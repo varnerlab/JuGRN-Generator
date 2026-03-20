@@ -228,17 +228,7 @@ function build_control_buffer(problem_object::ProblemObject)
 
     # initialize -
     filename = "Control.jl"
-    
 
-    try
-
-
-
-    catch error
-      rethrow(error)
-    end
-    
-    
     # build the header -
     header_buffer = build_copyright_header_buffer(problem_object)
 
@@ -260,15 +250,66 @@ function build_control_buffer(problem_object::ProblemObject)
     buffer *= function_comment_buffer
     buffer *= "function calculate_transcription_control_array(t::Float64,x::Array{Float64,1},data_dictionary::Dict{String,Any})\n"
     buffer *= "\n"
-    
+    buffer *= "\t# initialize the control - \n"
+    buffer *= "\tcontrol_array = zeros($(length(list_of_genes)))\n"
+    buffer *= "\n"
+
+    buffer *= "\t# Alias the species - \n"
+    for (index, species_object) in enumerate(list_of_species)
+        species_symbol = species_object.species_symbol
+        buffer *= "\t$(species_symbol) = x[$(index)]\n"
+    end
+    buffer *= "\n"
+
+    buffer *= "\t# Get the binding and control parameter dictionaries - \n"
+    buffer *= "\tbinding_parameter_dictionary = data_dictionary[\"binding_parameter_dictionary\"]\n"
+    buffer *= "\tcontrol_parameter_dictionary = data_dictionary[\"control_parameter_dictionary\"]\n"
+    buffer *= "\n"
+
+    # generate control logic for each gene -
+    for (gene_index, gene_object) in enumerate(list_of_genes)
+
+        gene_symbol = gene_object.species_symbol
+        activating_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :activate)
+        inhibiting_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :inhibit)
+
+        # binding parameters -
+        all_connections = ConnectionObject[]
+        append!(all_connections, activating_connections)
+        append!(all_connections, inhibiting_connections)
+
+        if !isempty(all_connections)
+            buffer *= iterate_binding_control_connection(gene_object, all_connections)
+            buffer *= iterate_control_control_connection(gene_object, all_connections)
+            buffer *= "\n"
+        end
+
+        # build the control transfer function -
+        buffer *= "\t# Transfer function target: $(gene_symbol)\n"
+        buffer *= "\tactor_set = [\n"
+
+        for connection_object in activating_connections
+            connection_symbol = connection_object.connection_symbol
+            buffer *= "\t\tW_$(gene_symbol)_$(connection_symbol)*(protein_$(connection_symbol)^n_$(gene_symbol)_$(connection_symbol))/(K_$(gene_symbol)_$(connection_symbol)^n_$(gene_symbol)_$(connection_symbol)+protein_$(connection_symbol)^n_$(gene_symbol)_$(connection_symbol))\n"
+        end
+
+        for connection_object in inhibiting_connections
+            connection_symbol = connection_object.connection_symbol
+            buffer *= "\t\tW_$(gene_symbol)_$(connection_symbol)*(1 - protein_$(connection_symbol)^n_$(gene_symbol)_$(connection_symbol)/(K_$(gene_symbol)_$(connection_symbol)^n_$(gene_symbol)_$(connection_symbol)+protein_$(connection_symbol)^n_$(gene_symbol)_$(connection_symbol)))\n"
+        end
+
+        buffer *= "\t]\n"
+        buffer *= "\tW_$(gene_symbol)_RNAP = control_parameter_dictionary[\"W_$(gene_symbol)_RNAP\"]\n"
+        buffer *= "\tcontrol_array[$(gene_index)] = (W_$(gene_symbol)_RNAP + sum(actor_set))/(1 + W_$(gene_symbol)_RNAP + sum(actor_set))\n"
+        buffer *= "\n"
+    end
 
     buffer *= "\t# return - \n"
     buffer *= "\treturn control_array\n"
     buffer *= "end\n"
     buffer *= "\n"
 
-  # we need to add the translation control -
-  # get the comment buffer -
+    # translation control -
     translation_comment_header_dictionary = problem_object.configuration_dictionary["function_comment_dictionary"]["translation_control_function"]
     translation_function_comment_buffer = build_function_header_buffer(translation_comment_header_dictionary)
 
@@ -283,12 +324,12 @@ function build_control_buffer(problem_object::ProblemObject)
     buffer *= "\treturn control_array\n"
     buffer *= "end\n"
 
-  # build the component -
+    # build the component -
     program_component::ProgramComponent = ProgramComponent()
     program_component.filename = filename
     program_component.buffer = buffer
 
-  # return -
+    # return -
     return (program_component)
 end
 
@@ -338,7 +379,7 @@ function build_data_dictionary_buffer(intermediate_representation::Dict{String,A
 
 end
 
-function build_data_dictionary_buffer_old(problem_object::ProblemObject, host_flag::Symbol)
+function build_data_dictionary_buffer(problem_object::ProblemObject, host_flag::Symbol)
 
     filename = "Data.jl"
 
@@ -408,7 +449,9 @@ function build_data_dictionary_buffer_old(problem_object::ProblemObject, host_fl
         species_type = species_object.species_type
 
         if (species_type == :gene)
-            buffer *= "\t\t1000.0\t;\t# $(index)\t$(species_symbol)\n"
+            gene_seq_lengths = get(problem_object.configuration_dictionary, "gene_sequence_lengths", Dict{String,Float64}())
+            gene_length = get(gene_seq_lengths, species_symbol, 1000.0)
+            buffer *= "\t\t$(gene_length)\t;\t# $(index)\t$(species_symbol)\n"
         end
     end
     buffer *= "\t]\n"
@@ -446,7 +489,13 @@ function build_data_dictionary_buffer_old(problem_object::ProblemObject, host_fl
         species_type = species_object.species_type
 
         if (species_type == :protein)
-            buffer *= "\t\tround((0.33)*mRNA_coding_length_array[$(counter)])\t;\t# $(index)\t$(counter)\t$(species_symbol)\n"
+            protein_seq_lengths = get(problem_object.configuration_dictionary, "protein_sequence_lengths", Dict{String,Float64}())
+            if haskey(protein_seq_lengths, species_symbol)
+                protein_length = protein_seq_lengths[species_symbol]
+                buffer *= "\t\t$(protein_length)\t;\t# $(index)\t$(counter)\t$(species_symbol)\n"
+            else
+                buffer *= "\t\tround((0.33)*mRNA_coding_length_array[$(counter)])\t;\t# $(index)\t$(counter)\t$(species_symbol)\n"
+            end
             counter = counter + 1
         end
     end
