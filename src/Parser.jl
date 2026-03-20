@@ -25,6 +25,14 @@ end
 
 function _parse_net_file(path_to_model_file::String)::Array{VGRNSentence,1}
 
+    # known action verbs -
+    action_verbs = Set(["activate", "activates", "activated", "induce", "induces", "induced",
+                        "inhibit", "inhibits", "inhibited", "repress", "represses", "repressed",
+                        "phosphorylate", "phosphorylates", "phosphorylated",
+                        "dephosphorylate", "dephosphorylates", "dephosphorylated",
+                        "bind", "binds", "bound",
+                        "unbind", "unbinds", "dissociate", "dissociates"])
+
     statement_vector = VGRNSentence[]
 
     open(path_to_model_file, "r") do file
@@ -36,10 +44,12 @@ function _parse_net_file(path_to_model_file::String)::Array{VGRNSentence,1}
                 continue
             end
 
-            # split the sentence into tokens -
+            # find the action verb in the line -
+            # this handles clauses like "(x, y, z) activates t" and "y inhibits (p, q, r)"
             tokens = split(stripped_line)
-            if length(tokens) < 3
-                @warn "Skipping malformed line: $(stripped_line)"
+            action_index = findfirst(t -> lowercase(t) in action_verbs, tokens)
+            if isnothing(action_index) || action_index == 1 || action_index == length(tokens)
+                @warn "Skipping malformed line (no action verb found): $(stripped_line)"
                 continue
             end
 
@@ -47,17 +57,47 @@ function _parse_net_file(path_to_model_file::String)::Array{VGRNSentence,1}
             sentence = VGRNSentence()
             sentence.original_sentence = stripped_line
             sentence.sentence_delimiter = ' '
+            sentence.sentence_modifier_clause = ""
+            sentence.sentence_product_clause = ""
 
-            # parse: actor action target
-            sentence.sentence_actor_clause = String(tokens[1])
-            sentence.sentence_action_clause = String(tokens[2])
-            sentence.sentence_target_clause = String(join(tokens[3:end], " "))
+            # everything before the action verb is the actor clause -
+            sentence.sentence_actor_clause = String(join(tokens[1:action_index-1], " "))
+            sentence.sentence_action_clause = String(tokens[action_index])
+
+            # parse the remainder after the action verb for "at" and "gives"/"produces" keywords -
+            remainder_tokens = tokens[action_index+1:end]
+            _parse_post_action_clauses!(sentence, remainder_tokens)
 
             push!(statement_vector, sentence)
         end
     end
 
     return statement_vector
+end
+
+function _parse_post_action_clauses!(sentence::VGRNSentence, tokens::AbstractVector)
+
+    # find keyword positions -
+    at_index = findfirst(t -> lowercase(t) == "at", tokens)
+    gives_index = findfirst(t -> lowercase(t) in ("gives", "produces", "forming"), tokens)
+
+    if !isnothing(at_index) && !isnothing(gives_index)
+        # pattern: target at site gives product
+        sentence.sentence_target_clause = String(join(tokens[1:at_index-1], " "))
+        sentence.sentence_modifier_clause = String(join(tokens[at_index+1:gives_index-1], " "))
+        sentence.sentence_product_clause = String(join(tokens[gives_index+1:end], " "))
+    elseif !isnothing(gives_index)
+        # pattern: target gives product (no site)
+        sentence.sentence_target_clause = String(join(tokens[1:gives_index-1], " "))
+        sentence.sentence_product_clause = String(join(tokens[gives_index+1:end], " "))
+    elseif !isnothing(at_index)
+        # pattern: target at site (no explicit product)
+        sentence.sentence_target_clause = String(join(tokens[1:at_index-1], " "))
+        sentence.sentence_modifier_clause = String(join(tokens[at_index+1:end], " "))
+    else
+        # simple pattern: just target
+        sentence.sentence_target_clause = String(join(tokens, " "))
+    end
 end
 
 function _parse_json_file(path_to_model_file::String)::Dict{String,Any}

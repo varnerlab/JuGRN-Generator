@@ -103,7 +103,6 @@ function generate_problem_object(statement_vector::Array{VGRNSentence})
     # Load the JSON configuration file -
     path_to_configuration_file = "$(path_to_package)/configuration/Configuration.json"
     config_dict = JSON.parsefile(path_to_configuration_file)
-    problem_object.configuration_dictionary = config_dict
 
     # construct the array of species -
     species_array::Array{SpeciesObject} = build_species_list(statement_vector)
@@ -111,11 +110,34 @@ function generate_problem_object(statement_vector::Array{VGRNSentence})
     # construct the array of reactions -
     connection_array::Array{ConnectionObject} = build_connection_list(statement_vector,config_dict)
 
+    # build PTM product map from sentence product clauses -
+    ptm_product_map = Dict{String,Vector{String}}()
+    ptm_verbs = Set(["phosphorylate", "phosphorylates", "phosphorylated",
+                      "dephosphorylate", "dephosphorylates", "dephosphorylated",
+                      "bind", "binds", "bound",
+                      "unbind", "unbinds", "dissociate", "dissociates"])
+
+    for (i, sentence) in enumerate(statement_vector)
+        action = lowercase(sentence.sentence_action_clause)
+        if action in ptm_verbs && isdefined(sentence, :sentence_product_clause) && !isempty(sentence.sentence_product_clause)
+            # find the matching connection -
+            if i <= length(connection_array)
+                conn = connection_array[i]
+                conn_key = conn.connection_symbol * "_" * string(conn.connection_type)
+                product_symbols = String[]
+                recursive_species_parser!(reverse(collect(sentence.sentence_product_clause)), product_symbols)
+                ptm_product_map[conn_key] = product_symbols
+            end
+        end
+    end
+    config_dict["ptm_product_map"] = ptm_product_map
+
     # set data on problem_object -
+    problem_object.configuration_dictionary = config_dict
     problem_object.list_of_species = species_array
     problem_object.list_of_connections = connection_array
 
-    # return#the problem_object -
+    # return the problem_object -
     return problem_object
 end
 
@@ -123,6 +145,14 @@ function build_connection_list(statement_vector::Array{VGRNSentence,1}, configur
 
   # initialize -
   list_of_connections = ConnectionObject[]
+
+  # build synonym sets from configuration -
+  induction_synonyms = _build_synonym_set(configuration_dictionary, "list_of_induction_synonyms")
+  repression_synonyms = _build_synonym_set(configuration_dictionary, "list_of_repression_synonyms")
+  phosphorylation_synonyms = _build_synonym_set(configuration_dictionary, "list_of_phosphorylation_synonyms")
+  dephosphorylation_synonyms = _build_synonym_set(configuration_dictionary, "list_of_dephosphorylation_synonyms")
+  binding_synonyms = _build_synonym_set(configuration_dictionary, "list_of_binding_synonyms")
+  unbinding_synonyms = _build_synonym_set(configuration_dictionary, "list_of_unbinding_synonyms")
 
   # iterate through the statement vector -
   for vgrn_sentence in statement_vector
@@ -150,7 +180,6 @@ function build_connection_list(statement_vector::Array{VGRNSentence,1}, configur
       connection_object.connection_symbol = actor_object.species_symbol
     else
 
-
       local_buffer = ""
       number_of_actors = length(actor_set)
       for (index,actor_object::SpeciesObject) in enumerate(actor_set)
@@ -168,32 +197,20 @@ function build_connection_list(statement_vector::Array{VGRNSentence,1}, configur
     connection_object.connection_actor_set = actor_set
     connection_object.connection_target_set = target_set
 
-    # create a set for list_of_induction_synonyms -
-    induction_synonyms = Set{String}()
-    list_of_induction_synonyms = configuration_dictionary["list_of_induction_synonyms"]
-    for (index,local_dictionary) in enumerate(list_of_induction_synonyms)
-
-      # grab the symbol -
-      symbol = local_dictionary["symbol"]
-      push!(induction_synonyms,symbol)
-    end
-
-    # create a set of list_of_repression_synonyms -
-    repression_synonyms = Set{String}()
-    list_of_repression_synonyms = configuration_dictionary["list_of_repression_synonyms"]
-    for (index,local_dictionary) in enumerate(list_of_repression_synonyms)
-
-      # grab the symbol -
-      symbol = local_dictionary["symbol"]
-      push!(repression_synonyms,symbol)
-    end
-
     # What is my type?
     connection_action_string = vgrn_sentence.sentence_action_clause
-    if (in(connection_action_string,induction_synonyms))
+    if (in(connection_action_string, induction_synonyms))
       connection_object.connection_type = :activate
-    elseif (in(connection_action_string,repression_synonyms))
+    elseif (in(connection_action_string, repression_synonyms))
       connection_object.connection_type = :inhibit
+    elseif (in(connection_action_string, phosphorylation_synonyms))
+      connection_object.connection_type = :phosphorylate
+    elseif (in(connection_action_string, dephosphorylation_synonyms))
+      connection_object.connection_type = :dephosphorylate
+    elseif (in(connection_action_string, binding_synonyms))
+      connection_object.connection_type = :bind
+    elseif (in(connection_action_string, unbinding_synonyms))
+      connection_object.connection_type = :unbind
     end
 
     # cache this connection -
@@ -202,6 +219,16 @@ function build_connection_list(statement_vector::Array{VGRNSentence,1}, configur
 
   # return -
   return list_of_connections
+end
+
+function _build_synonym_set(config::AbstractDict{String,Any}, key::String)::Set{String}
+    synonyms = Set{String}()
+    if haskey(config, key)
+        for entry in config[key]
+            push!(synonyms, entry["symbol"])
+        end
+    end
+    return synonyms
 end
 
 function species_object_factory(list_of_symbols::Array{String})
@@ -216,51 +243,78 @@ end
 
 function build_species_list(statement_vector::Array{VGRNSentence})
 
-  list_of_symbols = String[]
+  # separate transcriptional sentences from post-translational sentences -
+  ptm_verbs = Set(["phosphorylate", "phosphorylates", "phosphorylated",
+                    "dephosphorylate", "dephosphorylates", "dephosphorylated",
+                    "bind", "binds", "bound",
+                    "unbind", "unbinds", "dissociate", "dissociates"])
+
+  # collect gene symbols from transcriptional regulation sentences -
+  list_of_gene_symbols = String[]
+  ptm_species_set = Set{String}()  # additional species from PTM events
+
   for vgrn_sentence in statement_vector
 
-    # build species string -
-    species_string = vgrn_sentence.sentence_actor_clause*" "*vgrn_sentence.sentence_target_clause
-    recursive_species_parser!(reverse(collect(species_string)),list_of_symbols)
+    action = lowercase(vgrn_sentence.sentence_action_clause)
+
+    if action in ptm_verbs
+      # PTM sentence: collect actor and target symbols as protein-level species -
+      actor_symbols = String[]
+      recursive_species_parser!(reverse(collect(vgrn_sentence.sentence_actor_clause)), actor_symbols)
+      for s in actor_symbols
+        push!(ptm_species_set, s)
+      end
+
+      target_symbols = String[]
+      recursive_species_parser!(reverse(collect(vgrn_sentence.sentence_target_clause)), target_symbols)
+      for s in target_symbols
+        push!(ptm_species_set, s)
+      end
+
+      # product clause creates new species -
+      if isdefined(vgrn_sentence, :sentence_product_clause) && !isempty(vgrn_sentence.sentence_product_clause)
+        product_symbols = String[]
+        recursive_species_parser!(reverse(collect(vgrn_sentence.sentence_product_clause)), product_symbols)
+        for s in product_symbols
+          push!(ptm_species_set, s)
+        end
+      end
+    else
+      # transcriptional regulation: actors and targets are gene-level symbols -
+      species_string = vgrn_sentence.sentence_actor_clause * " " * vgrn_sentence.sentence_target_clause
+      recursive_species_parser!(reverse(collect(species_string)), list_of_gene_symbols)
+    end
   end
 
-  # ok, so we need to convert this to a set, and then convert back to an array (set is unique)
-  species_set = Set{String}()
-  for symbol in list_of_symbols
-    push!(species_set,symbol)
-  end
+  # unique gene symbols -
+  gene_symbol_set = Set{String}(list_of_gene_symbols)
+  unique_gene_symbols = sort!(collect(gene_symbol_set))
 
-  # unique list -
-  unique_list_of_species = String[]
-  for symbol in species_set
-    push!(unique_list_of_species,symbol)
-  end
-
-  # sort -
-  sort!(unique_list_of_species)
-
-  # ok, so we have a sorted list of *genes* (that is what is in the file)
-  # create a list of genes, mRNA and protein -
+  # build gene/mRNA/protein triples from gene symbols -
   list_of_species_objects = SpeciesObject[]
+  all_protein_symbols = Set{String}()
 
-  # build the species objects -
-  for species_symbol in unique_list_of_species
+  for species_symbol in unique_gene_symbols
 
-    # objects -
-    gene_object = SpeciesObject(:gene,species_symbol)
+    gene_object = SpeciesObject(:gene, species_symbol)
+    mRNA_symbol = "mRNA_" * species_symbol
+    mRNA_object = SpeciesObject(:mrna, mRNA_symbol)
+    protein_symbol = "protein_" * species_symbol
+    protein_object = SpeciesObject(:protein, protein_symbol)
+    push!(all_protein_symbols, protein_symbol)
 
-    # mRNA -
-    mRNA_symbol = "mRNA_"*species_symbol
-    mRNA_object = SpeciesObject(:mrna,mRNA_symbol)
+    push!(list_of_species_objects, gene_object)
+    push!(list_of_species_objects, mRNA_object)
+    push!(list_of_species_objects, protein_object)
+  end
 
-    # protein -
-    protein_symbol = "protein_"*species_symbol
-    protein_object = SpeciesObject(:protein,protein_symbol)
-
-    # push -
-    push!(list_of_species_objects,gene_object)
-    push!(list_of_species_objects,mRNA_object)
-    push!(list_of_species_objects,protein_object)
+  # add PTM species that aren't already covered by the gene/mRNA/protein triples -
+  for ptm_symbol in sort!(collect(ptm_species_set))
+    # check if this is already a protein from the triple generation -
+    if !("protein_" * ptm_symbol in all_protein_symbols) && !(ptm_symbol in all_protein_symbols)
+      # determine type: binding products are complexes, modified proteins are proteins -
+      push!(list_of_species_objects, SpeciesObject(:protein, ptm_symbol))
+    end
   end
 
   # partition by type -

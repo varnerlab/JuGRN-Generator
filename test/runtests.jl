@@ -150,4 +150,171 @@ using JuGRN
         rm(path_to_json; force=true)
         rm(path_to_output; recursive=true, force=true)
     end
+
+    @testset "Compound actor/target syntax in .net" begin
+        path_to_compound = joinpath(@__DIR__, "data", "TestCompound.net")
+        result = parse_grn_file(path_to_compound)
+        @test length(result) == 3
+
+        # many-to-one: (GntR, sigma70) activates gene_Venus
+        @test result[1].sentence_actor_clause == "(GntR, sigma70)"
+        @test result[1].sentence_action_clause == "activates"
+        @test result[1].sentence_target_clause == "gene_Venus"
+
+        # one-to-many: LacI inhibits (gene_Venus, gene_GFP)
+        @test result[2].sentence_actor_clause == "LacI"
+        @test result[2].sentence_action_clause == "inhibits"
+        @test result[2].sentence_target_clause == "(gene_Venus, gene_GFP)"
+
+        # model generation with compound syntax -
+        path_to_output = joinpath(tempdir(), "jugrn_compound_$(rand(1000:9999))")
+        make_julia_model(path_to_compound, path_to_output; host_type=:bacteria)
+
+        data_content = read(joinpath(path_to_output, "src", "Data.jl"), String)
+
+        # many-to-one creates compound parameter: K_gene_Venus_GntR_sigma70
+        @test occursin("K_gene_Venus_GntR_sigma70", data_content)
+        @test occursin("W_gene_Venus_GntR_sigma70", data_content)
+
+        # one-to-many creates separate parameters for each target
+        @test occursin("K_gene_Venus_LacI", data_content)
+        @test occursin("K_gene_GFP_LacI", data_content)
+
+        # species count: 6 unique genes -> 18 species
+        @test isfile(joinpath(path_to_output, "src", "network", "Network.dat"))
+        network_content = read(joinpath(path_to_output, "src", "network", "Network.dat"), String)
+        lines = filter(!isempty, split(network_content, "\n"))
+        @test length(lines) == 18
+
+        rm(path_to_output; recursive=true, force=true)
+    end
+
+    @testset "Save and load model (JLD2) from .net" begin
+        path_to_net_file = joinpath(@__DIR__, "data", "Test.net")
+        path_to_jld2 = joinpath(tempdir(), "jugrn_save_test_$(rand(1000:9999)).jld2")
+
+        # save from file -
+        save_model(path_to_jld2, path_to_net_file; host_type=:bacteria,
+            metadata=Dict{String,Any}("author" => "test", "description" => "unit test"))
+        @test isfile(path_to_jld2)
+
+        # load -
+        (model, meta) = load_model(path_to_jld2)
+        @test isa(model, JuGRN.ProblemObject)
+        @test length(model.list_of_species) == 9
+        @test length(model.list_of_connections) == 2
+        @test meta["author"] == "test"
+        @test meta["source_file"] == "Test.net"
+        @test haskey(meta, "save_timestamp")
+
+        # regenerate from loaded model -
+        path_to_output = joinpath(tempdir(), "jugrn_from_jld2_$(rand(1000:9999))")
+        make_julia_model(model, path_to_output; host_type=:bacteria)
+        @test isfile(joinpath(path_to_output, "src", "Data.jl"))
+        @test isfile(joinpath(path_to_output, "src", "Kinetics.jl"))
+        @test isfile(joinpath(path_to_output, "src", "network", "Network.dat"))
+
+        rm(path_to_jld2; force=true)
+        rm(path_to_output; recursive=true, force=true)
+    end
+
+    @testset "Parse post-translational modification syntax in .net" begin
+        path_to_ptm = joinpath(@__DIR__, "data", "TestPTM.net")
+        result = parse_grn_file(path_to_ptm)
+
+        # should have 5 sentences -
+        @test length(result) == 5
+
+        # standard activation -
+        @test result[1].sentence_actor_clause == "sigma70"
+        @test result[1].sentence_action_clause == "activates"
+        @test result[1].sentence_target_clause == "gene_deGFP"
+
+        # phosphorylation with site and product -
+        @test result[2].sentence_action_clause == "phosphorylates"
+        @test result[2].sentence_actor_clause == "kinase_A"
+        @test result[2].sentence_target_clause == "protein_deGFP"
+        @test result[2].sentence_modifier_clause == "S147"
+        @test result[2].sentence_product_clause == "protein_deGFP_p_S147"
+
+        # dephosphorylation with product -
+        @test result[3].sentence_action_clause == "dephosphorylates"
+        @test result[3].sentence_target_clause == "protein_deGFP_p_S147"
+        @test result[3].sentence_product_clause == "protein_deGFP"
+
+        # binding -
+        @test result[4].sentence_action_clause == "bind"
+        @test result[4].sentence_actor_clause == "(protein_deGFP, protein_deGFP)"
+        @test result[4].sentence_target_clause == "dimer_deGFP"
+
+        # complex activates gene -
+        @test result[5].sentence_action_clause == "activates"
+        @test result[5].sentence_actor_clause == "dimer_deGFP"
+    end
+
+    @testset "Model generation with PTM reactions from .net" begin
+        path_to_ptm = joinpath(@__DIR__, "data", "TestPTM.net")
+        path_to_output = joinpath(tempdir(), "jugrn_ptm_$(rand(1000:9999))")
+
+        make_julia_model(path_to_ptm, path_to_output; host_type=:cell_free)
+
+        # verify generated files exist -
+        @test isfile(joinpath(path_to_output, "src", "Data.jl"))
+        @test isfile(joinpath(path_to_output, "src", "Kinetics.jl"))
+        @test isfile(joinpath(path_to_output, "src", "Control.jl"))
+        @test isfile(joinpath(path_to_output, "src", "network", "Network.dat"))
+
+        # check PTM.jl has PTM rate function -
+        @test isfile(joinpath(path_to_output, "src", "PTM.jl"))
+        ptm_content = read(joinpath(path_to_output, "src", "PTM.jl"), String)
+        @test occursin("calculate_ptm_rates", ptm_content)
+        @test occursin("kcat_", ptm_content)   # phosphorylation kcat
+        @test occursin("Km_", ptm_content)     # phosphorylation Km
+        @test occursin("kf_", ptm_content)     # binding forward rate
+
+        # check data dictionary has PTM parameters -
+        data_content = read(joinpath(path_to_output, "src", "Data.jl"), String)
+        @test occursin("ptm_parameter_dictionary", data_content)
+
+        # stoichiometric matrix should have extra columns for PTM reactions -
+        network_content = read(joinpath(path_to_output, "src", "network", "Network.dat"), String)
+        lines = filter(!isempty, split(network_content, "\n"))
+        @test length(lines) > 0
+
+        # count columns in first line (should have TXTL + PTM columns) -
+        first_line_values = split(strip(lines[1]))
+        # we have gene triples for: sigma70, deGFP, kinase_A, phosphatase_B, dimer_deGFP
+        # plus PTM species: protein_deGFP_p_S147
+        # TXTL rates + 3 PTM rates (phosphorylate, dephosphorylate, bind) -
+        @test length(first_line_values) > 6  # more than just TXTL rates
+
+        rm(path_to_output; recursive=true, force=true)
+    end
+
+    @testset "Save and load model (JLD2) from .json with sequences" begin
+        path_to_json_file = joinpath(@__DIR__, "data", "Test.json")
+        path_to_jld2 = joinpath(tempdir(), "jugrn_save_json_$(rand(1000:9999)).jld2")
+
+        # save -
+        save_model(path_to_jld2, path_to_json_file)
+        @test isfile(path_to_jld2)
+
+        # load -
+        (model, meta) = load_model(path_to_jld2)
+        @test length(model.list_of_species) == 6
+
+        # sequence lengths survive the round-trip -
+        gene_lengths = model.configuration_dictionary["gene_sequence_lengths"]
+        @test haskey(gene_lengths, "gene_gntR")
+        @test gene_lengths["gene_gntR"] == 972.0
+
+        # regenerate and verify real lengths are used -
+        path_to_output = joinpath(tempdir(), "jugrn_from_jld2_json_$(rand(1000:9999))")
+        make_julia_model(model, path_to_output)
+        data_content = read(joinpath(path_to_output, "src", "Data.jl"), String)
+        @test occursin("972.0", data_content)
+
+        rm(path_to_jld2; force=true)
+        rm(path_to_output; recursive=true, force=true)
+    end
 end

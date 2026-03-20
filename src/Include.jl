@@ -6,6 +6,7 @@ using Logging
 using DataFrames
 using FASTX
 using BioSequences
+using JLD2
 
 # constants -
 const path_to_package = dirname(pathof(@__MODULE__))

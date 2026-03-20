@@ -61,6 +61,31 @@
     }
   ],
 
+  "list_of_phosphorylation_synonyms":[
+    {"symbol":"phosphorylate"},
+    {"symbol":"phosphorylates"},
+    {"symbol":"phosphorylated"}
+  ],
+
+  "list_of_dephosphorylation_synonyms":[
+    {"symbol":"dephosphorylate"},
+    {"symbol":"dephosphorylates"},
+    {"symbol":"dephosphorylated"}
+  ],
+
+  "list_of_binding_synonyms":[
+    {"symbol":"bind"},
+    {"symbol":"binds"},
+    {"symbol":"bound"}
+  ],
+
+  "list_of_unbinding_synonyms":[
+    {"symbol":"unbind"},
+    {"symbol":"unbinds"},
+    {"symbol":"dissociate"},
+    {"symbol":"dissociates"}
+  ],
+
   "function_comment_dictionary":{
 
     "calculate_transcription_rates":{

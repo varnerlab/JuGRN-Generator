@@ -1,0 +1,6 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+JuGRN = "01be4fbe-a34e-11e9-172a-6f8d80f7f783"
+
+[compat]
+Documenter = "1"

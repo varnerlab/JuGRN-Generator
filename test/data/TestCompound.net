@@ -1,0 +1,9 @@
+// Test compound actor/target syntax
+// Many-to-one: (x, y) activates a single target
+(GntR, sigma70) activates gene_Venus
+
+// One-to-many: single actor inhibits multiple targets
+LacI inhibits (gene_Venus, gene_GFP)
+
+// Standard single-to-single
+sigma70 activates gene_LacI

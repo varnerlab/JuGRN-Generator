@@ -258,58 +258,137 @@ end
 
 function generate_stoichiomteric_matrix_buffer(problem_object::ProblemObject)
 
-  # list of species -
+    # list of species -
     list_of_species = problem_object.list_of_species
+    list_of_connections = problem_object.list_of_connections
 
-  # how many mRNA and protein species do we have?
+    # how many mRNA and protein species do we have?
     number_of_genes = number_of_species_of_type(list_of_species, :gene)
     number_of_mRNA = number_of_species_of_type(list_of_species, :mrna)
     number_of_proteins = number_of_species_of_type(list_of_species, :protein)
 
-  # initialize the buffer -
-    buffer = ""
+    # count PTM reactions -
+    ptm_types = Set([:phosphorylate, :dephosphorylate, :bind, :unbind])
+    ptm_connections = filter(c -> c.connection_type in ptm_types, list_of_connections)
+    number_of_ptm_reactions = length(ptm_connections)
 
-  # how many species?
+    # total columns = TXTL rates + PTM rates -
+    number_of_txtl_rates = number_of_mRNA + number_of_proteins
+    number_of_total_rates = number_of_txtl_rates + number_of_ptm_reactions
+
+    # build species index map -
+    species_index_map = Dict{String,Int}()
+    for (i, sp) in enumerate(list_of_species)
+        species_index_map[sp.species_symbol] = i
+    end
+
+    # initialize stoichiometric matrix as zeros -
     number_of_species = length(list_of_species)
-    for row_species_index = 1:number_of_species
+    S = zeros(Float64, number_of_species, number_of_total_rates)
 
-    # what is the species type?
-        species_object_row = list_of_species[row_species_index]
-        species_type_row = species_object_row.species_type
-
-        if (species_type_row == :gene)
-
-            for txtl_index = 1:(number_of_mRNA + number_of_proteins)
-                buffer *= " 0.0 "
-            end
-
-      # add a new line -
-            buffer *= "\n"
+    # fill TXTL block (existing logic) -
+    # mRNA and protein species get +1 on the diagonal in the TXTL columns
+    for row_species_index = 1:(number_of_species - number_of_genes)
+        if row_species_index <= number_of_txtl_rates
+            S[number_of_genes + row_species_index, row_species_index] = 1.0
         end
     end
 
-    for row_species_index = 1:(number_of_species - number_of_genes)
+    # fill PTM block -
+    for (ptm_index, conn) in enumerate(ptm_connections)
+        col = number_of_txtl_rates + ptm_index
 
-        for txtl_index = 1:(number_of_mRNA + number_of_proteins)
-            if (row_species_index == txtl_index)
-                buffer *= " 1.0 "
-            else
-                buffer *= " 0.0 "
+        if conn.connection_type == :phosphorylate || conn.connection_type == :dephosphorylate
+            # substrate is consumed (-1), product is formed (+1), enzyme unchanged -
+            # target is the substrate -
+            for target_obj in conn.connection_target_set
+                substrate_symbol = target_obj.species_symbol
+                # look for protein version first, then raw symbol -
+                substrate_key = _find_species_key(species_index_map, substrate_symbol)
+                if !isnothing(substrate_key)
+                    S[species_index_map[substrate_key], col] = -1.0
+                end
+            end
+
+            # product: need to check the sentence product clause -
+            # product symbols are stored as species - find them -
+            product_symbols = _get_product_symbols_for_ptm(conn, problem_object)
+            for prod_sym in product_symbols
+                prod_key = _find_species_key(species_index_map, prod_sym)
+                if !isnothing(prod_key)
+                    S[species_index_map[prod_key], col] = 1.0
+                end
+            end
+
+        elseif conn.connection_type == :bind
+            # reactants consumed (-1), complex formed (+1) -
+            for actor_obj in conn.connection_actor_set
+                actor_key = _find_species_key(species_index_map, actor_obj.species_symbol)
+                if !isnothing(actor_key)
+                    S[species_index_map[actor_key], col] = -1.0
+                end
+            end
+            for target_obj in conn.connection_target_set
+                target_key = _find_species_key(species_index_map, target_obj.species_symbol)
+                if !isnothing(target_key)
+                    S[species_index_map[target_key], col] = 1.0
+                end
+            end
+
+        elseif conn.connection_type == :unbind
+            # complex consumed (-1), components formed (+1) -
+            for actor_obj in conn.connection_actor_set
+                actor_key = _find_species_key(species_index_map, actor_obj.species_symbol)
+                if !isnothing(actor_key)
+                    S[species_index_map[actor_key], col] = -1.0
+                end
+            end
+            for target_obj in conn.connection_target_set
+                target_key = _find_species_key(species_index_map, target_obj.species_symbol)
+                if !isnothing(target_key)
+                    S[species_index_map[target_key], col] = 1.0
+                end
             end
         end
+    end
 
+    # convert matrix to buffer string -
+    buffer = ""
+    for row = 1:number_of_species
+        for col = 1:number_of_total_rates
+            buffer *= " $(S[row, col]) "
+        end
         buffer *= "\n"
     end
 
-
-  # build the component -
+    # build the component -
     filename = "Network.dat"
     program_component::ProgramComponent = ProgramComponent()
     program_component.filename = filename
     program_component.buffer = buffer
 
-  # return -
+    # return -
     return (program_component)
+end
+
+function _find_species_key(species_index_map::Dict{String,Int}, symbol::String)::Union{String,Nothing}
+    # try exact match first -
+    if haskey(species_index_map, symbol)
+        return symbol
+    end
+    # try protein_ prefix -
+    protein_symbol = "protein_" * symbol
+    if haskey(species_index_map, protein_symbol)
+        return protein_symbol
+    end
+    return nothing
+end
+
+function _get_product_symbols_for_ptm(conn::ConnectionObject, problem_object::ProblemObject)::Vector{String}
+    # for PTM connections, the product species are stored in config -
+    ptm_products = get(problem_object.configuration_dictionary, "ptm_product_map", Dict{String,Vector{String}}())
+    conn_key = conn.connection_symbol * "_" * string(conn.connection_type)
+    return get(ptm_products, conn_key, String[])
 end
 
 function generate_dilution_matrix_buffer(problem_object::ProblemObject)

@@ -1,0 +1,15 @@
+// Test post-translational modification syntax
+// Standard transcriptional regulation
+sigma70 activates gene_deGFP
+
+// Phosphorylation: kinase modifies substrate at site, producing modified form
+kinase_A phosphorylates protein_deGFP at S147 gives protein_deGFP_p_S147
+
+// Dephosphorylation: phosphatase removes modification
+phosphatase_B dephosphorylates protein_deGFP_p_S147 gives protein_deGFP
+
+// Binding: two proteins form a complex
+(protein_deGFP, protein_deGFP) bind dimer_deGFP
+
+// The complex can regulate transcription
+dimer_deGFP activates gene_deGFP

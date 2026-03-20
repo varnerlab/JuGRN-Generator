@@ -686,6 +686,27 @@ function build_data_dictionary_buffer(problem_object::ProblemObject, host_flag::
     # buffer *= "\n"
 
     # parameter name mapping -
+    # PTM parameters -
+    ptm_types = Set([:phosphorylate, :dephosphorylate, :bind, :unbind])
+    ptm_connections = filter(c -> c.connection_type in ptm_types, list_of_connections)
+    if !isempty(ptm_connections)
+        buffer *= "\n"
+        buffer *= "\t# Post-translational modification parameters - \n"
+        buffer *= "\tptm_parameter_dictionary = Dict{String,Float64}()\n"
+
+        for conn in ptm_connections
+            conn_symbol = conn.connection_symbol
+            if conn.connection_type == :phosphorylate || conn.connection_type == :dephosphorylate
+                buffer *= "\tptm_parameter_dictionary[\"kcat_$(conn_symbol)\"] = 10.0\t# hr^-1\n"
+                buffer *= "\tptm_parameter_dictionary[\"Km_$(conn_symbol)\"] = 0.1\t# muM\n"
+            elseif conn.connection_type == :bind
+                buffer *= "\tptm_parameter_dictionary[\"kf_$(conn_symbol)\"] = 1.0\t# muM^-1*hr^-1\n"
+            elseif conn.connection_type == :unbind
+                buffer *= "\tptm_parameter_dictionary[\"kr_$(conn_symbol)\"] = 0.1\t# hr^-1\n"
+            end
+        end
+    end
+
     buffer *= "\n"
     buffer *= "\t# Parameter name index array - \n"
     name_parameter_mapping_buffer = generate_parameter_name_mapping(list_of_genes, list_of_connections::Array{ConnectionObject})
@@ -733,6 +754,12 @@ function build_data_dictionary_buffer(problem_object::ProblemObject, host_flag::
     buffer *= "\tdata_dictionary[\"degradation_modifier_array\"] = degradation_modifier_array\n"
     buffer *= "\tdata_dictionary[\"time_constant_modifier_array\"] = time_constant_modifier_array\n"
     buffer *= "\tdata_dictionary[\"biophysical_constants_dictionary\"] = biophysical_constants_dictionary\n"
+
+    # include PTM parameters if present -
+    if !isempty(ptm_connections)
+        buffer *= "\tdata_dictionary[\"ptm_parameter_dictionary\"] = ptm_parameter_dictionary\n"
+    end
+
     buffer *= "\t# =============================== DO NOT EDIT ABOVE THIS LINE ============================== #\n"
     buffer *= "\treturn data_dictionary\n"
     buffer *= "end\n"
@@ -986,6 +1013,126 @@ function build_kinetics_buffer(problem_object::ProblemObject)
 
   # return -
     return (program_component)
+end
+
+function build_ptm_kinetics_buffer(problem_object::ProblemObject)::Union{ProgramComponent,Nothing}
+
+    ptm_buffer = build_ptm_kinetics_section(problem_object)
+    if isempty(ptm_buffer)
+        return nothing
+    end
+
+    filename = "PTM.jl"
+
+    header_buffer = build_copyright_header_buffer(problem_object)
+    buffer = ""
+    buffer *= header_buffer
+    buffer *= ptm_buffer
+
+    program_component = ProgramComponent()
+    program_component.filename = filename
+    program_component.buffer = buffer
+
+    return program_component
+end
+
+function build_ptm_kinetics_section(problem_object::ProblemObject)::String
+
+    list_of_connections = problem_object.list_of_connections
+    list_of_species = problem_object.list_of_species
+    ptm_types = Set([:phosphorylate, :dephosphorylate, :bind, :unbind])
+    ptm_connections = filter(c -> c.connection_type in ptm_types, list_of_connections)
+
+    if isempty(ptm_connections)
+        return ""
+    end
+
+    buffer = ""
+    buffer *= "# ----------------------------------------------------------------------------------- #\n"
+    buffer *= "# Function: calculate_ptm_rates\n"
+    buffer *= "# Description: Calculate post-translational modification rates at time t\n"
+    buffer *= "# ----------------------------------------------------------------------------------- #\n"
+    buffer *= "function calculate_ptm_rates(t::Float64,x::Array{Float64,1},data_dictionary::Dict{String,Any})\n"
+    buffer *= "\n"
+
+    # alias all species -
+    buffer *= "\t# Alias the species - \n"
+    for (index, species_object) in enumerate(list_of_species)
+        species_symbol = species_object.species_symbol
+        buffer *= "\t$(species_symbol) = x[$(index)]\n"
+    end
+    buffer *= "\n"
+
+    buffer *= "\t# Get PTM kinetic parameters - \n"
+    buffer *= "\tptm_parameter_dictionary = data_dictionary[\"ptm_parameter_dictionary\"]\n"
+    buffer *= "\n"
+
+    buffer *= "\t# Initialize the PTM rate array - \n"
+    buffer *= "\tptm_rate_array = zeros($(length(ptm_connections)))\n"
+    buffer *= "\n"
+
+    for (ptm_index, conn) in enumerate(ptm_connections)
+
+        conn_symbol = conn.connection_symbol
+
+        if conn.connection_type == :phosphorylate || conn.connection_type == :dephosphorylate
+            # Michaelis-Menten: v = kcat * E * S / (Km + S)
+            enzyme_symbol = _resolve_species_symbol(conn.connection_actor_set[1], list_of_species)
+            substrate_symbol = _resolve_species_symbol(conn.connection_target_set[1], list_of_species)
+            label = conn.connection_type == :phosphorylate ? "Phosphorylation" : "Dephosphorylation"
+
+            buffer *= "\t# $(label): $(conn_symbol) -> $(conn.connection_type)\n"
+            buffer *= "\tkcat_$(conn_symbol) = ptm_parameter_dictionary[\"kcat_$(conn_symbol)\"]\n"
+            buffer *= "\tKm_$(conn_symbol) = ptm_parameter_dictionary[\"Km_$(conn_symbol)\"]\n"
+            buffer *= "\tptm_rate_array[$(ptm_index)] = kcat_$(conn_symbol)*($(enzyme_symbol))*(($(substrate_symbol))/(Km_$(conn_symbol)+$(substrate_symbol)))\n"
+            buffer *= "\n"
+
+        elseif conn.connection_type == :bind
+            # mass action: v = kf * A * B * ...
+            buffer *= "\t# Binding: $(conn_symbol)\n"
+            buffer *= "\tkf_$(conn_symbol) = ptm_parameter_dictionary[\"kf_$(conn_symbol)\"]\n"
+            rate_expr = "kf_$(conn_symbol)"
+            for actor_obj in conn.connection_actor_set
+                actor_sym = _resolve_species_symbol(actor_obj, list_of_species)
+                rate_expr *= "*($(actor_sym))"
+            end
+            buffer *= "\tptm_rate_array[$(ptm_index)] = $(rate_expr)\n"
+            buffer *= "\n"
+
+        elseif conn.connection_type == :unbind
+            # mass action: v = kr * Complex
+            buffer *= "\t# Unbinding: $(conn_symbol)\n"
+            buffer *= "\tkr_$(conn_symbol) = ptm_parameter_dictionary[\"kr_$(conn_symbol)\"]\n"
+            complex_sym = _resolve_species_symbol(conn.connection_actor_set[1], list_of_species)
+            buffer *= "\tptm_rate_array[$(ptm_index)] = kr_$(conn_symbol)*($(complex_sym))\n"
+            buffer *= "\n"
+        end
+    end
+
+    buffer *= "\t# return - \n"
+    buffer *= "\treturn ptm_rate_array\n"
+    buffer *= "end\n"
+    buffer *= "\n"
+
+    return buffer
+end
+
+function _resolve_species_symbol(species_obj::SpeciesObject, list_of_species::Array{SpeciesObject})::String
+    # try to find the exact symbol in the species list -
+    symbol = species_obj.species_symbol
+    for sp in list_of_species
+        if sp.species_symbol == symbol
+            return symbol
+        end
+    end
+    # try with protein_ prefix -
+    protein_symbol = "protein_" * symbol
+    for sp in list_of_species
+        if sp.species_symbol == protein_symbol
+            return protein_symbol
+        end
+    end
+    return symbol
 end
 
 function build_inputs_buffer(problem_object::ProblemObject)

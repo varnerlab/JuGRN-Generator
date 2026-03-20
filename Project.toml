@@ -1,17 +1,23 @@
 name = "JuGRN"
 uuid = "01be4fbe-a34e-11e9-172a-6f8d80f7f783"
-authors = ["varnerlab <jdv27@cornell.edu>"]
 version = "0.1.0"
+authors = ["varnerlab <jdv27@cornell.edu>"]
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
 BioSequences = "7e6ae17a-c86d-528c-b3b9-7f778a29fe59"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+DocumenterTools = "35a29f4d-8980-5a13-9543-d66fff28ecb8"
 FASTX = "c2308a5c-f048-11e8-3e8a-31650f418d12"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+
+[compat]
+DocumenterTools = "0.1.21"
+JLD2 = "0.6.3"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

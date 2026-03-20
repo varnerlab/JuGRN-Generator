@@ -18,6 +18,10 @@ export build_julia_model_object
 # template generation -
 export generate_json_template
 
+# model persistence -
+export save_model
+export load_model
+
 # types -
 export VLJuliaModelObject
 

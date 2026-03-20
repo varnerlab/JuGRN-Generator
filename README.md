@@ -1,79 +1,67 @@
 ## Gene Regulatory Network Generator in Julia (JuGRN)
 
-### Introduction ###
-JuGRN is a code generation system that transforms simple descriptions of the connectivity of gene regulatory networks into model code written in the [Julia](http://julialang.org) programming language. JuGRN has been used in the publications:
+[![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://varnerlab.github.io/JuGRN-Generator/stable/)
+[![Documentation](https://img.shields.io/badge/docs-dev-blue.svg)](https://varnerlab.github.io/JuGRN-Generator/dev/)
+
+### Introduction
+JuGRN is a code generation system that transforms simple descriptions of the connectivity of gene regulatory networks into model code written in the [Julia](https://julialang.org) programming language. JuGRN has been used in the publications:
 
 1. [Tasseff R, Jensen H, Congleton J, Dai W, Rogers K, Sagar A, Yen A and J. Varner (2017) An Effective Model of the Retinoic Acid Induced Differentiation Program, Sci Reports, 7:14327 doi:10.1038/s41598-017-14523-5](https://www.nature.com/articles/s41598-017-14523-5)
 2. [Gould R, Bassen DM, Chakrabarti A, Varner JD and Butcher J (2016) Population Heterogeneity in the Epithelial to Mesenchymal Transition Is Controlled by NFAT and Phosphorylated Sp1. PLoS Comput Biol 12(12): e1005251. doi:10.1371/journal.pcbi.1005251](http://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005251)
 
-to generate gene regulatory network code.
+### Installation
 
-### Installation and Requirements
-``JuGRN.jl`` is organized as a [Julia](http://julialang.org) package which 
-can be installed in the ``package mode`` of Julia.
+`JuGRN.jl` requires Julia 1.6 or higher. Install from the Julia package manager:
 
-Start of the [Julia REPL](https://docs.julialang.org/en/v1/stdlib/REPL/index.html) and enter the ``package mode`` using the ``]`` key (to get back press the ``backspace`` or ``^C`` keys). Then, at the prompt enter:
+```julia
+pkg> add https://github.com/varnerlab/JuGRN-Generator.git
+```
 
-    (v1.1) pkg> add https://github.com/varnerlab/JuGRN-Generator.git
+### Quick Start
 
-This will install the ``JuGRN.jl`` package and the other required packages.
-``JuGRN.jl`` requires Julia 1.3.x and above.
+Define a network file (`MyNetwork.net`):
 
-``JuGRN.jl`` is open source. 
-You can download this repository as a zip file, or clone or pull it by using the command (from the command-line):
+```
+sigma70 activates gene_deGFP
+sigma70 activates gene_sigma28
+protein_sigma28 activates gene_deGFP
+protein_deGFP inhibits gene_sigma28
+```
 
-	$ git pull https://github.com/varnerlab/JuGRN-Generator.git
+Generate model code:
 
-or
+```julia
+using JuGRN
+make_julia_model("MyNetwork.net", "my_model"; host_type=:cell_free)
+```
 
-	$ git clone https://github.com/varnerlab/JuGRN-Generator.git
+### Features
 
-### How do I generate model code? ###
-To generate a GRN model, issue the command ``make_julia_model.jl`` from the command line (outside of the REPL):
+- **Two input formats**: sentence-based `.net` for quick prototyping, structured `.json` with real sequence data
+- **Compound regulatory syntax**: `(x, y) activates z` and `x inhibits (a, b)`
+- **Post-translational modifications**: phosphorylation, dephosphorylation, binding, unbinding
+- **JSON template generation**: convert `.net` to editable `.json` templates
+- **Model persistence**: save/load via JLD2 for portable model objects
+- **Multiple host types**: `:bacteria`, `:mammalian`, `:cell_free`
 
-	$ julia make_julia_model.jl -m <input path> -o <output path> -s <host type>
+### Documentation
 
-The ``make_julia_model.jl`` command takes four command line arguments:
+Full documentation is available at **[varnerlab.github.io/JuGRN-Generator](https://varnerlab.github.io/JuGRN-Generator/stable/)**.
 
-Argument | Required | Default | Description
---- | --- | --- | ---
--m | Yes	| none | Path to model input file (your \*.net file)
--o | No	| current directory | Path where files are written
--s | No	| bacterial | Host type (bacterial \| mammalian)
+### Format for the GRN model input file
 
-### Format for the GRN model input file ###
-JuGRN-Generator transforms structured flat files into GRN model code. JuGRN-Generator takes flat files of the form:
+JuGRN-Generator takes flat files of the form:
 
-~~~
-// ----------------------------------------------------------------------- //
-// JuGRN interactions -
-//
-// Record:
-// actor {activate(*),induce(*) | inhibit(*),repress(*)} (target,...)
-// ---------------------------------------------------------------------- //
-
-// three gene memory network -
-gene_1 induces (gene_2,gene_3)
+```
+// three gene memory network
+gene_1 induces (gene_2, gene_3)
 gene_2 activates gene_3
 gene_3 activates gene_2
 
-~~~
+// post-translational modifications
+kinase_A phosphorylates protein_Y at S621 gives protein_Y_p
+(protein_A, protein_B) bind complex_AB
+complex_AB activates gene_target
+```
 
-The model specification file (by default given the filename `Network.net`) defines the biology of the model that gets generated.
-JuGRN generates the files:
-
-Filename | Description
---- | ---
-``AdjDriver.jl`` | Driver function to solve the adjoint system of equations (sensitivity analysis)
-``Balances.jl`` | Material balance equations for genes, mRNA and proteins in the GRN
-``Control.jl`` | Encodes the control logic described in your GRN network file
-``DataDictionary.jl`` | Encodes the model parameters e.g., initial conditions or promoter function parameters in a [Julia dictionary](https://docs.julialang.org/en/stable/stdlib/collections/#Base.Dict)
-``Degradation.dat`` | Stoichiometric matrix for mRNA and protein degradation reactions
-``Dilution.dat`` | Stoichiometric matrix for mRNA and protein dilution reactions
-``Discrete.jl`` | Contains methods to evaluate the discrete mass balance equations (discretized using a zero-order-hold)
-``Driver.jl`` | Example script that can be used to solve the continuous material balance equations
-``Include.jl`` | Includes all the JuGRN files into the current workspace
-``Kinetics.jl`` | Encodes the rate of transcription, translation and degradation for mRNA and protein species
-``Network.dat`` | Stoichiometric array for the transcription and translation reactions
-``SolveBalances.jl`` | Solves the material balance equations using ODE solvers from the [ODE package](https://github.com/JuliaDiffEq/ODE.jl)
-``Utility.jl`` | Encodes utility functions required for sensitivity analysis (e.g., computation of the Jacobian)
+See the [documentation](https://varnerlab.github.io/JuGRN-Generator/stable/) for full syntax details.

@@ -16,16 +16,6 @@ Input arguments:
 function make_julia_model(path_to_model_file::String, path_to_output_dir::String;
     host_type::Symbol=:bacteria, control_function_generation::Bool=true)
 
-    # initialize -
-    src_component_set = Set{ProgramComponent}()
-    network_component_set = Set{ProgramComponent}()
-
-    # create the output paths -
-    _PATH_TO_OUTPUT_SRC_DIR = joinpath(path_to_output_dir, "src")
-    _PATH_TO_ROOT_DIR = path_to_output_dir
-    _PATH_TO_OUTPUT_DATABASE_DIR = joinpath(_PATH_TO_OUTPUT_SRC_DIR, "database")
-    _PATH_TO_NETWORK_OUTPUT_DIR = joinpath(_PATH_TO_OUTPUT_SRC_DIR, "network")
-
     # Load and parse the model file -
     parsed_result = parse_grn_file(path_to_model_file)
 
@@ -49,6 +39,44 @@ function make_julia_model(path_to_model_file::String, path_to_output_dir::String
     else
         throw(ArgumentError("Unsupported parse result type: $(typeof(parsed_result))"))
     end
+
+    # generate from the problem object -
+    _generate_model_from_problem_object(problem_object, path_to_output_dir;
+        host_type=host_type, control_function_generation=control_function_generation)
+end
+
+"""
+    make_julia_model(problem_object::ProblemObject, path_to_output_dir::String; host_type::Symbol=:bacteria, control_function_generation::Bool=true)
+
+Generate an executable Julia GRN model from a `ProblemObject`. Use this method to regenerate model code
+from a previously saved (e.g., JLD2) model object.
+"""
+function make_julia_model(problem_object::ProblemObject, path_to_output_dir::String;
+    host_type::Symbol=:bacteria, control_function_generation::Bool=true)
+
+    # check if host_type is stored in the problem object -
+    if haskey(problem_object.configuration_dictionary, "host_type")
+        json_host = problem_object.configuration_dictionary["host_type"]
+        host_type_map = Dict("CF_PURE" => :cell_free, "bacteria" => :bacteria, "mammalian" => :mammalian)
+        host_type = get(host_type_map, json_host, host_type)
+    end
+
+    _generate_model_from_problem_object(problem_object, path_to_output_dir;
+        host_type=host_type, control_function_generation=control_function_generation)
+end
+
+function _generate_model_from_problem_object(problem_object::ProblemObject, path_to_output_dir::String;
+    host_type::Symbol=:bacteria, control_function_generation::Bool=true)
+
+    # initialize -
+    src_component_set = Set{ProgramComponent}()
+    network_component_set = Set{ProgramComponent}()
+
+    # create the output paths -
+    _PATH_TO_OUTPUT_SRC_DIR = joinpath(path_to_output_dir, "src")
+    _PATH_TO_ROOT_DIR = path_to_output_dir
+    _PATH_TO_OUTPUT_DATABASE_DIR = joinpath(_PATH_TO_OUTPUT_SRC_DIR, "database")
+    _PATH_TO_NETWORK_OUTPUT_DIR = joinpath(_PATH_TO_OUTPUT_SRC_DIR, "network")
 
     # Write the Inputs -
     program_component_inputs = build_inputs_buffer(problem_object)
@@ -89,4 +117,86 @@ function make_julia_model(path_to_model_file::String, path_to_output_dir::String
 
     # transfer the README -
     transfer_distribution_files("$(path_to_package)/distribution", _PATH_TO_ROOT_DIR, ".md")
+
+    # Write PTM kinetics file (after distribution transfer to avoid overwrite) -
+    program_component_ptm = build_ptm_kinetics_buffer(problem_object)
+    if !isnothing(program_component_ptm)
+        ptm_set = Set{ProgramComponent}()
+        push!(ptm_set, program_component_ptm)
+        write_program_components_to_disk(_PATH_TO_OUTPUT_SRC_DIR, ptm_set)
+    end
+end
+
+"""
+    save_model(path_to_file::String, problem_object::ProblemObject; metadata::Dict{String,Any}=Dict{String,Any}())
+
+Save a `ProblemObject` to a JLD2 file. The saved file contains the complete model specification
+(species, connections, configuration, sequence lengths) and can be loaded later to regenerate model code.
+
+Optional `metadata` dictionary can store additional information (e.g., author, description, version).
+"""
+function save_model(path_to_file::String, problem_object::ProblemObject;
+    metadata::Dict{String,Any}=Dict{String,Any}())
+
+    # ensure .jld2 extension -
+    if !endswith(path_to_file, ".jld2")
+        path_to_file *= ".jld2"
+    end
+
+    jldsave(path_to_file;
+        problem_object=problem_object,
+        metadata=metadata,
+        jugrn_version=string(@__MODULE__) * " v0.1.0",
+        save_timestamp=string(Dates.now())
+    )
+
+    @info "Model saved to $(path_to_file)"
+    return path_to_file
+end
+
+"""
+    save_model(path_to_jld2::String, path_to_model_file::String; host_type::Symbol=:bacteria, metadata::Dict{String,Any}=Dict{String,Any}())
+
+Parse a GRN specification file (`.net` or `.json`) and save the resulting `ProblemObject` to JLD2.
+"""
+function save_model(path_to_jld2::String, path_to_model_file::String;
+    host_type::Symbol=:bacteria, metadata::Dict{String,Any}=Dict{String,Any}())
+
+    # parse and build -
+    parsed_result = parse_grn_file(path_to_model_file)
+    problem_object = nothing
+    if isa(parsed_result, Array{VGRNSentence,1})
+        problem_object = generate_problem_object(parsed_result)
+    elseif isa(parsed_result, Dict{String,Any})
+        problem_object = generate_problem_object(parsed_result)
+    else
+        throw(ArgumentError("Unsupported parse result type: $(typeof(parsed_result))"))
+    end
+
+    # store source info in metadata -
+    metadata["source_file"] = basename(path_to_model_file)
+    metadata["host_type"] = string(host_type)
+
+    return save_model(path_to_jld2, problem_object; metadata=metadata)
+end
+
+"""
+    load_model(path_to_file::String) -> (problem_object::ProblemObject, metadata::Dict{String,Any})
+
+Load a `ProblemObject` from a JLD2 file. Returns the problem object and any associated metadata.
+
+The loaded problem object can be passed directly to `make_julia_model` to regenerate model code.
+"""
+function load_model(path_to_file::String)
+
+    data = JLD2.load(path_to_file)
+    problem_object = data["problem_object"]
+    metadata = get(data, "metadata", Dict{String,Any}())
+
+    # add load-time info -
+    metadata["jugrn_version"] = get(data, "jugrn_version", "unknown")
+    metadata["save_timestamp"] = get(data, "save_timestamp", "unknown")
+
+    @info "Model loaded from $(path_to_file) (saved: $(metadata["save_timestamp"]))"
+    return (problem_object, metadata)
 end

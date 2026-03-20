@@ -8,6 +8,8 @@ mutable struct VGRNSentence
     sentence_action_clause::String
     sentence_target_clause::String
     sentence_delimiter::Char
+    sentence_modifier_clause::String      # e.g., "S621" from "at S621"
+    sentence_product_clause::String        # e.g., "y_p_S621" from "gives y_p_S621"
 
     function VGRNSentence()
         this = new()
