@@ -18,6 +18,7 @@ makedocs(
         ],
         "Features" => [
             "Model Generation" => "model_generation.md",
+            "Effective Biophysical Model" => "effective_model.md",
             "Post-Translational Modifications" => "ptm.md",
             "JSON Template Generation" => "json_template.md",
             "Model Persistence (JLD2)" => "persistence.md",

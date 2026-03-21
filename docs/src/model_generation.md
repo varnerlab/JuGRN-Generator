@@ -33,6 +33,21 @@ The `host_type` keyword controls biophysical parameters and gene abundance repre
 | `:mammalian` | Mammalian cells | Copy number per cell (default: 2.0) |
 | `:cell_free` | Cell-free expression (e.g., PURE system) | Concentration in nM (default: 5.0) |
 
+## Model Types
+
+The `model_type` keyword selects between two model formulations:
+
+```julia
+# Standard model (default) — simple saturation kinetics
+make_julia_model("MyNetwork.net", "output_dir"; model_type=:standard)
+
+# Effective biophysical model (Adhikari et al., 2020)
+make_julia_model("MyNetwork.net", "output_dir";
+    host_type=:cell_free, model_type=:effective)
+```
+
+See [Effective Biophysical Model](effective_model.md) for full details on the `:effective` formulation.
+
 ## Control Function Generation
 
 By default, JuGRN generates transcription control functions from the network topology using Hill-function transfer functions. To generate blank control stubs instead (for manual implementation):
@@ -53,3 +68,4 @@ Internally, `make_julia_model` follows this pipeline:
 4. **Write** generated files to the output directory
 5. **Transfer** distribution files (Balances.jl, SolveBalances.jl, utility functions)
 6. **Generate** PTM.jl if post-translational modification reactions are present
+7. For `:effective` model type, overwrite Kinetics.jl and Types.jl with the effective versions

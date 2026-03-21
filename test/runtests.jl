@@ -291,6 +291,71 @@ using JuGRN
         rm(path_to_output; recursive=true, force=true)
     end
 
+    @testset "Model generation with effective biophysical model" begin
+        path_to_net_file = joinpath(@__DIR__, "data", "Test.net")
+        path_to_output = joinpath(tempdir(), "jugrn_test_effective_$(rand(1000:9999))")
+
+        make_julia_model(path_to_net_file, path_to_output; host_type=:cell_free, model_type=:effective)
+
+        # verify generated files exist -
+        @test isfile(joinpath(path_to_output, "src", "Data.jl"))
+        @test isfile(joinpath(path_to_output, "src", "Kinetics.jl"))
+        @test isfile(joinpath(path_to_output, "src", "Control.jl"))
+        @test isfile(joinpath(path_to_output, "src", "Inputs.jl"))
+        @test isfile(joinpath(path_to_output, "src", "Balances.jl"))
+        @test isfile(joinpath(path_to_output, "src", "SolveBalances.jl"))
+        @test isfile(joinpath(path_to_output, "src", "network", "Network.dat"))
+
+        # check Kinetics.jl contains effective model markers -
+        kinetics_content = read(joinpath(path_to_output, "src", "Kinetics.jl"), String)
+        @test occursin("R_XT", kinetics_content)
+        @test occursin("tau_X_array", kinetics_content)
+        @test occursin("O_X_j", kinetics_content)
+        @test occursin("calculate_txtl_kinetics_array", kinetics_content)
+        @test occursin("Adhikari", kinetics_content)
+        @test occursin("V_X_max_j", kinetics_content)
+        @test occursin("V_L_max_j", kinetics_content)
+        @test occursin("O_L_j", kinetics_content)
+        @test !occursin("TranslationParameters", kinetics_content)
+
+        # check Control.jl contains thermodynamic u -
+        control_content = read(joinpath(path_to_output, "src", "Control.jl"), String)
+        @test occursin("dG_dictionary", control_content)
+        @test occursin("exp(", control_content)
+        @test occursin("tau_L_half", control_content)
+        @test occursin("Boltzmann", control_content) || occursin("thermodynamic", control_content) || occursin("Adhikari", control_content)
+        @test occursin("numerator_", control_content)
+        @test occursin("denominator_", control_content)
+        @test occursin("epsilon", control_content)
+
+        # check Data.jl contains effective parameters -
+        data_content = read(joinpath(path_to_output, "src", "Data.jl"), String)
+        @test occursin("R_XT", data_content)
+        @test occursin("R_LT", data_content)
+        @test occursin("tau_X_array", data_content)
+        @test occursin("tau_L_array", data_content)
+        @test occursin("dG_dictionary", data_content)
+        @test occursin("theta_m_array", data_content)
+        @test occursin("theta_p_array", data_content)
+        @test occursin("K_P", data_content)
+        @test occursin("temperature", data_content)
+        @test occursin("tau_L_half", data_content)
+        @test occursin("Adhikari", data_content)
+
+        # check Types.jl does NOT reference TranslationParameters -
+        types_content = read(joinpath(path_to_output, "src", "Types.jl"), String)
+        @test !occursin("TranslationParameters", types_content)
+
+        # generated Julia files are syntactically valid -
+        for jl_file in ["Data.jl", "Kinetics.jl", "Control.jl", "Inputs.jl"]
+            content = read(joinpath(path_to_output, "src", jl_file), String)
+            @test !isempty(content)
+            @test occursin("function", content)
+        end
+
+        rm(path_to_output; recursive=true, force=true)
+    end
+
     @testset "Save and load model (JLD2) from .json with sequences" begin
         path_to_json_file = joinpath(@__DIR__, "data", "Test.json")
         path_to_jld2 = joinpath(tempdir(), "jugrn_save_json_$(rand(1000:9999)).jld2")

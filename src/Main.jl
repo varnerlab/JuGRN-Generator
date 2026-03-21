@@ -1,5 +1,5 @@
 """
-    make_julia_model(path_to_model_file::String, path_to_output_dir::String; host_type::Symbol=:bacteria, control_function_generation::Bool=true)
+    make_julia_model(path_to_model_file::String, path_to_output_dir::String; host_type::Symbol=:bacteria, control_function_generation::Bool=true, model_type::Symbol=:standard)
 
 Generate an executable Julia gene regulatory network (GRN) model from a network specification file.
 Parses the network topology, generates stoichiometric matrices, kinetics, control logic, and data dictionary
@@ -12,9 +12,10 @@ Input arguments:
 - `path_to_output_dir::String` - path to the directory where generated model code will be written.
 - `host_type::Symbol` - host organism type. Supported values: `:bacteria`, `:mammalian`, `:cell_free` (default: `:bacteria`).
 - `control_function_generation::Bool` - if `true`, generates transcription control functions from the network topology; if `false`, generates blank control stubs (default: `true`).
+- `model_type::Symbol` - model formulation type. `:standard` uses simple saturation kinetics; `:effective` uses the Adhikari et al. (2020) effective biophysical model with resource competition and thermodynamic control (default: `:standard`).
 """
 function make_julia_model(path_to_model_file::String, path_to_output_dir::String;
-    host_type::Symbol=:bacteria, control_function_generation::Bool=true)
+    host_type::Symbol=:bacteria, control_function_generation::Bool=true, model_type::Symbol=:standard)
 
     # Load and parse the model file -
     parsed_result = parse_grn_file(path_to_model_file)
@@ -42,17 +43,19 @@ function make_julia_model(path_to_model_file::String, path_to_output_dir::String
 
     # generate from the problem object -
     _generate_model_from_problem_object(problem_object, path_to_output_dir;
-        host_type=host_type, control_function_generation=control_function_generation)
+        host_type=host_type, control_function_generation=control_function_generation, model_type=model_type)
 end
 
 """
-    make_julia_model(problem_object::ProblemObject, path_to_output_dir::String; host_type::Symbol=:bacteria, control_function_generation::Bool=true)
+    make_julia_model(problem_object::ProblemObject, path_to_output_dir::String; host_type::Symbol=:bacteria, control_function_generation::Bool=true, model_type::Symbol=:standard)
 
 Generate an executable Julia GRN model from a `ProblemObject`. Use this method to regenerate model code
 from a previously saved (e.g., JLD2) model object.
+
+- `model_type::Symbol` - model formulation type. `:standard` uses simple saturation kinetics; `:effective` uses the Adhikari et al. (2020) effective biophysical model (default: `:standard`).
 """
 function make_julia_model(problem_object::ProblemObject, path_to_output_dir::String;
-    host_type::Symbol=:bacteria, control_function_generation::Bool=true)
+    host_type::Symbol=:bacteria, control_function_generation::Bool=true, model_type::Symbol=:standard)
 
     # check if host_type is stored in the problem object -
     if haskey(problem_object.configuration_dictionary, "host_type")
@@ -62,11 +65,11 @@ function make_julia_model(problem_object::ProblemObject, path_to_output_dir::Str
     end
 
     _generate_model_from_problem_object(problem_object, path_to_output_dir;
-        host_type=host_type, control_function_generation=control_function_generation)
+        host_type=host_type, control_function_generation=control_function_generation, model_type=model_type)
 end
 
 function _generate_model_from_problem_object(problem_object::ProblemObject, path_to_output_dir::String;
-    host_type::Symbol=:bacteria, control_function_generation::Bool=true)
+    host_type::Symbol=:bacteria, control_function_generation::Bool=true, model_type::Symbol=:standard)
 
     # initialize -
     src_component_set = Set{ProgramComponent}()
@@ -82,21 +85,42 @@ function _generate_model_from_problem_object(problem_object::ProblemObject, path
     program_component_inputs = build_inputs_buffer(problem_object)
     push!(src_component_set, program_component_inputs)
 
-    # Write the data_dictionary -
-    program_component_data_dictionary = build_data_dictionary_buffer(problem_object, host_type)
-    push!(src_component_set, program_component_data_dictionary)
+    if model_type == :effective
 
-    # Write the Kinetics -
-    program_component_kinetics = build_kinetics_buffer(problem_object)
-    push!(src_component_set, program_component_kinetics)
+        # ---- Effective biophysical model (Adhikari et al., 2020) ---- #
 
-    # Write the Control functions -
-    if control_function_generation
-        program_component_control = build_control_buffer(problem_object)
+        # Write the data_dictionary (effective version) -
+        program_component_data_dictionary = build_data_dictionary_buffer_effective(problem_object, host_type)
+        push!(src_component_set, program_component_data_dictionary)
+
+        # Write the Kinetics (effective version) -
+        program_component_kinetics = build_kinetics_buffer_effective(problem_object)
+        push!(src_component_set, program_component_kinetics)
+
+        # Write the Control functions (effective version with thermodynamic control) -
+        program_component_control = build_control_buffer_effective(problem_object)
+        push!(src_component_set, program_component_control)
+
     else
-        program_component_control = build_blank_control_buffer(problem_object)
+
+        # ---- Standard model ---- #
+
+        # Write the data_dictionary -
+        program_component_data_dictionary = build_data_dictionary_buffer(problem_object, host_type)
+        push!(src_component_set, program_component_data_dictionary)
+
+        # Write the Kinetics -
+        program_component_kinetics = build_kinetics_buffer(problem_object)
+        push!(src_component_set, program_component_kinetics)
+
+        # Write the Control functions -
+        if control_function_generation
+            program_component_control = build_control_buffer(problem_object)
+        else
+            program_component_control = build_blank_control_buffer(problem_object)
+        end
+        push!(src_component_set, program_component_control)
     end
-    push!(src_component_set, program_component_control)
 
     # Write the stoichiometric_matrix -
     program_component_stoichiometric_matrix = generate_stoichiomteric_matrix_buffer(problem_object)
@@ -117,6 +141,16 @@ function _generate_model_from_problem_object(problem_object::ProblemObject, path
 
     # transfer the README -
     transfer_distribution_files("$(path_to_package)/distribution", _PATH_TO_ROOT_DIR, ".md")
+
+    if model_type == :effective
+
+        # For the effective model, overwrite the distribution Kinetics.jl and Types.jl
+        # with the effective versions (distribution transfer overwrites our generated files) -
+        effective_overwrite_set = Set{ProgramComponent}()
+        push!(effective_overwrite_set, build_kinetics_buffer_effective(problem_object))
+        push!(effective_overwrite_set, build_types_buffer_effective())
+        write_program_components_to_disk(_PATH_TO_OUTPUT_SRC_DIR, effective_overwrite_set)
+    end
 
     # Write PTM kinetics file (after distribution transfer to avoid overwrite) -
     program_component_ptm = build_ptm_kinetics_buffer(problem_object)

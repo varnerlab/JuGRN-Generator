@@ -1259,3 +1259,729 @@ function generate_parameter_name_mapping(list_of_genes::Array{SpeciesObject}, li
   # return -
     return buffer
 end
+
+# ====================================================================================== #
+# Effective biophysical model builders (Adhikari et al., 2020)
+# ====================================================================================== #
+
+function build_kinetics_buffer_effective(problem_object::ProblemObject)
+
+    filename = "Kinetics.jl"
+
+    # get list of species from the po -
+    list_of_species::Array{SpeciesObject} = problem_object.list_of_species
+
+    # build the header -
+    header_buffer = build_copyright_header_buffer(problem_object)
+
+    # count genes and mRNAs -
+    list_of_genes = extract_species_of_type(list_of_species, :gene)
+    list_of_mRNAs = extract_species_of_type(list_of_species, :mrna)
+    list_of_proteins = extract_species_of_type(list_of_species, :protein)
+    number_of_genes = length(list_of_genes)
+
+    # build the index arrays -
+    mRNA_indices = Int[]
+    protein_indices = Int[]
+    gene_indices = Int[]
+    for (index, species_object) in enumerate(list_of_species)
+        if species_object.species_type == :mrna
+            push!(mRNA_indices, index)
+        elseif species_object.species_type == :protein
+            push!(protein_indices, index)
+        elseif species_object.species_type == :gene
+            push!(gene_indices, index)
+        end
+    end
+
+    # initialize the buffer -
+    buffer = ""
+    buffer *= header_buffer
+    buffer *= "# ====================================================================================== #\n"
+    buffer *= "# Effective biophysical TXTL kinetics (Adhikari et al., 2020)\n"
+    buffer *= "# ====================================================================================== #\n"
+    buffer *= "\n"
+
+    # Main function: calculate_txtl_kinetics_array -
+    buffer *= "function calculate_txtl_kinetics_array(t::Float64,x::Array{Float64,1},data_dictionary::Dict{String,Any})::Array{Float64,1}\n"
+    buffer *= "\n"
+    buffer *= "\t# initialize - \n"
+    buffer *= "\tcalculated_txtl_kinetics_array = Float64[]\n"
+    buffer *= "\n"
+    buffer *= "\t# Get effective model parameters from data dictionary - \n"
+    buffer *= "\tR_XT = data_dictionary[\"R_XT\"]\t# RNAP concentration (muM)\n"
+    buffer *= "\tR_LT = data_dictionary[\"R_LT\"]\t# ribosome concentration (muM)\n"
+    buffer *= "\tv_X = data_dictionary[\"v_X\"]\t# transcription elongation rate (nt/s)\n"
+    buffer *= "\tv_L = data_dictionary[\"v_L\"]\t# translation elongation rate (aa/s)\n"
+    buffer *= "\tK_X = data_dictionary[\"K_X\"]\t# transcription saturation constant (muM)\n"
+    buffer *= "\tK_L = data_dictionary[\"K_L\"]\t# translation saturation constant (muM)\n"
+    buffer *= "\tK_P = data_dictionary[\"K_P\"]\t# polysome amplification factor\n"
+    buffer *= "\ttau_X_array = data_dictionary[\"tau_X_array\"]\t# TX dimensionless time constants\n"
+    buffer *= "\ttau_L_array = data_dictionary[\"tau_L_array\"]\t# TL dimensionless time constants\n"
+    buffer *= "\tgene_coding_length_array = data_dictionary[\"gene_coding_length_array\"]\n"
+    buffer *= "\tprotein_coding_length_array = data_dictionary[\"protein_coding_length_array\"]\n"
+    buffer *= "\tspecies_symbol_type_array = data_dictionary[\"species_symbol_type_array\"]\n"
+    buffer *= "\n"
+
+    # Gene concentrations -
+    buffer *= "\t# Gene concentrations - \n"
+    buffer *= "\tgene_abundance_array = Float64[]\n"
+    for (i, gi) in enumerate(gene_indices)
+        buffer *= "\tpush!(gene_abundance_array, x[$(gi)])\t# $(list_of_genes[i].species_symbol)\n"
+    end
+    buffer *= "\n"
+
+    # mRNA concentrations -
+    buffer *= "\t# mRNA concentrations - \n"
+    buffer *= "\tmRNA_concentration_array = Float64[]\n"
+    for (i, mi) in enumerate(mRNA_indices)
+        buffer *= "\tpush!(mRNA_concentration_array, x[$(mi)])\t# $(list_of_mRNAs[i].species_symbol)\n"
+    end
+    buffer *= "\n"
+
+    # Number of genes -
+    buffer *= "\t# number of genes - \n"
+    buffer *= "\tnumber_of_genes = $(number_of_genes)\n"
+    buffer *= "\n"
+
+    # Convert elongation rates to per-hour -
+    buffer *= "\t# Convert elongation rates to per-hour - \n"
+    buffer *= "\tv_X_hr = v_X * 3600.0\t# nt/hr\n"
+    buffer *= "\tv_L_hr = v_L * 3600.0\t# aa/hr\n"
+    buffer *= "\n"
+
+    # Transcription rates (Eq. 3 with competition Eq. 4) -
+    buffer *= "\t# ---- Transcription kinetic limit (Eq. 3) with competition (Eq. 4) ---- #\n"
+    buffer *= "\ttranscription_rate_array = zeros(number_of_genes)\n"
+    buffer *= "\tfor j in 1:number_of_genes\n"
+    buffer *= "\n"
+    buffer *= "\t\t# gene concentration - \n"
+    buffer *= "\t\tG_j = gene_abundance_array[j]\n"
+    buffer *= "\t\tl_G_j = gene_coding_length_array[j]\n"
+    buffer *= "\t\ttau_X_j = tau_X_array[j]\n"
+    buffer *= "\n"
+    buffer *= "\t\t# Vmax for transcription (Eq. 7) - \n"
+    buffer *= "\t\tV_X_max_j = R_XT * (v_X_hr / l_G_j)\n"
+    buffer *= "\n"
+    buffer *= "\t\t# Competition term (Eq. 4) - \n"
+    buffer *= "\t\tO_X_j = 0.0\n"
+    buffer *= "\t\tfor i in 1:number_of_genes\n"
+    buffer *= "\t\t\tif i != j\n"
+    buffer *= "\t\t\t\ttau_X_i = tau_X_array[i]\n"
+    buffer *= "\t\t\t\tG_i = gene_abundance_array[i]\n"
+    buffer *= "\t\t\t\tO_X_j += (tau_X_j / tau_X_i) * (1.0 + tau_X_i) * G_i\n"
+    buffer *= "\t\t\tend\n"
+    buffer *= "\t\tend\n"
+    buffer *= "\n"
+    buffer *= "\t\t# Transcription rate (Eq. 3) - \n"
+    buffer *= "\t\ttranscription_rate_array[j] = V_X_max_j * G_j / (tau_X_j * K_X + (1.0 + tau_X_j) * G_j + O_X_j)\n"
+    buffer *= "\tend\n"
+    buffer *= "\n"
+
+    # Translation rates (Eq. 5 with competition Eq. 6) -
+    buffer *= "\t# ---- Translation kinetic limit (Eq. 5) with competition (Eq. 6) ---- #\n"
+    buffer *= "\ttranslation_rate_array = zeros(number_of_genes)\n"
+    buffer *= "\tfor j in 1:number_of_genes\n"
+    buffer *= "\n"
+    buffer *= "\t\t# mRNA concentration - \n"
+    buffer *= "\t\tm_j = mRNA_concentration_array[j]\n"
+    buffer *= "\t\tl_P_j = protein_coding_length_array[j]\n"
+    buffer *= "\t\ttau_L_j = tau_L_array[j]\n"
+    buffer *= "\n"
+    buffer *= "\t\t# Vmax for translation (Eq. 8) - \n"
+    buffer *= "\t\tV_L_max_j = K_P * R_LT * (v_L_hr / l_P_j)\n"
+    buffer *= "\n"
+    buffer *= "\t\t# Competition term (Eq. 6) - \n"
+    buffer *= "\t\tO_L_j = 0.0\n"
+    buffer *= "\t\tfor i in 1:number_of_genes\n"
+    buffer *= "\t\t\tif i != j\n"
+    buffer *= "\t\t\t\ttau_L_i = tau_L_array[i]\n"
+    buffer *= "\t\t\t\tm_i = mRNA_concentration_array[i]\n"
+    buffer *= "\t\t\t\tO_L_j += (tau_L_j / tau_L_i) * (1.0 + tau_L_i) * m_i\n"
+    buffer *= "\t\t\tend\n"
+    buffer *= "\t\tend\n"
+    buffer *= "\n"
+    buffer *= "\t\t# Translation rate (Eq. 5) - \n"
+    buffer *= "\t\ttranslation_rate_array[j] = V_L_max_j * m_j / (tau_L_j * K_L + (1.0 + tau_L_j) * m_j + O_L_j)\n"
+    buffer *= "\tend\n"
+    buffer *= "\n"
+
+    # Package result -
+    buffer *= "\t# Package: [TX_rates; TL_rates] - \n"
+    buffer *= "\tfor value in transcription_rate_array\n"
+    buffer *= "\t\tpush!(calculated_txtl_kinetics_array, value)\n"
+    buffer *= "\tend\n"
+    buffer *= "\tfor value in translation_rate_array\n"
+    buffer *= "\t\tpush!(calculated_txtl_kinetics_array, value)\n"
+    buffer *= "\tend\n"
+    buffer *= "\n"
+    buffer *= "\t# return - TX rates, then TL rates - \n"
+    buffer *= "\treturn calculated_txtl_kinetics_array\n"
+    buffer *= "end\n"
+
+    # build the component -
+    program_component::ProgramComponent = ProgramComponent()
+    program_component.filename = filename
+    program_component.buffer = buffer
+
+    # return -
+    return (program_component)
+end
+
+function build_control_buffer_effective(problem_object::ProblemObject)
+
+    filename = "Control.jl"
+
+    # build the header -
+    header_buffer = build_copyright_header_buffer(problem_object)
+
+    # extract lists -
+    list_of_species = problem_object.list_of_species
+    list_of_genes = extract_species_of_type(list_of_species, :gene)
+    list_of_connections::Array{ConnectionObject} = problem_object.list_of_connections
+
+    number_of_genes = length(list_of_genes)
+
+    # initialize the buffer -
+    buffer = ""
+    buffer *= header_buffer
+    buffer *= "# ====================================================================================== #\n"
+    buffer *= "# Effective biophysical control functions (Adhikari et al., 2020)\n"
+    buffer *= "# ====================================================================================== #\n"
+    buffer *= "\n"
+
+    # --- Transcription control (Eq. 9): thermodynamic/Boltzmann formulation --- #
+    buffer *= "function calculate_transcription_control_array(t::Float64,x::Array{Float64,1},data_dictionary::Dict{String,Any})\n"
+    buffer *= "\n"
+    buffer *= "\t# initialize the control - \n"
+    buffer *= "\tcontrol_array = zeros($(number_of_genes))\n"
+    buffer *= "\n"
+
+    buffer *= "\t# Alias the species - \n"
+    for (index, species_object) in enumerate(list_of_species)
+        species_symbol = species_object.species_symbol
+        buffer *= "\t$(species_symbol) = x[$(index)]\n"
+    end
+    buffer *= "\n"
+
+    buffer *= "\t# Get the thermodynamic parameter dictionaries - \n"
+    buffer *= "\tdG_dictionary = data_dictionary[\"dG_dictionary\"]\n"
+    buffer *= "\tbinding_parameter_dictionary = data_dictionary[\"binding_parameter_dictionary\"]\n"
+    buffer *= "\ttemperature = data_dictionary[\"temperature\"]\t# K\n"
+    buffer *= "\tRT = 8.314e-3 * temperature\t# kJ/mol\n"
+    buffer *= "\n"
+
+    # generate control logic for each gene -
+    for (gene_index, gene_object) in enumerate(list_of_genes)
+
+        gene_symbol = gene_object.species_symbol
+        activating_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :activate)
+        inhibiting_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :inhibit)
+
+        buffer *= "\t# ---- Control for gene $(gene_index): $(gene_symbol) ---- #\n"
+
+        # RNAP Boltzmann weight -
+        buffer *= "\tdG_$(gene_symbol)_RNAP = dG_dictionary[\"dG_$(gene_symbol)_RNAP\"]\n"
+        buffer *= "\tW_$(gene_symbol)_RNAP = exp(-dG_$(gene_symbol)_RNAP / RT)\n"
+
+        # numerator starts with RNAP alone -
+        buffer *= "\tnumerator_$(gene_index) = W_$(gene_symbol)_RNAP\n"
+        buffer *= "\tdenominator_$(gene_index) = 1.0 + W_$(gene_symbol)_RNAP\n"
+
+        # activators: contribute to both numerator and denominator -
+        for connection_object in activating_connections
+            connection_symbol = connection_object.connection_symbol
+
+            buffer *= "\tn_$(gene_symbol)_$(connection_symbol) = binding_parameter_dictionary[\"n_$(gene_symbol)_$(connection_symbol)\"]\n"
+            buffer *= "\tK_$(gene_symbol)_$(connection_symbol) = binding_parameter_dictionary[\"K_$(gene_symbol)_$(connection_symbol)\"]\n"
+            buffer *= "\tdG_$(gene_symbol)_$(connection_symbol) = dG_dictionary[\"dG_$(gene_symbol)_$(connection_symbol)\"]\n"
+            buffer *= "\tW_$(gene_symbol)_$(connection_symbol) = exp(-dG_$(gene_symbol)_$(connection_symbol) / RT)\n"
+            buffer *= "\tf_$(gene_symbol)_$(connection_symbol) = (protein_$(connection_symbol)^n_$(gene_symbol)_$(connection_symbol))/(K_$(gene_symbol)_$(connection_symbol)^n_$(gene_symbol)_$(connection_symbol)+protein_$(connection_symbol)^n_$(gene_symbol)_$(connection_symbol))\n"
+            buffer *= "\tnumerator_$(gene_index) += W_$(gene_symbol)_$(connection_symbol)*f_$(gene_symbol)_$(connection_symbol)\n"
+            buffer *= "\tdenominator_$(gene_index) += W_$(gene_symbol)_$(connection_symbol)*f_$(gene_symbol)_$(connection_symbol)\n"
+        end
+
+        # repressors: contribute only to denominator -
+        for connection_object in inhibiting_connections
+            connection_symbol = connection_object.connection_symbol
+
+            buffer *= "\tn_$(gene_symbol)_$(connection_symbol) = binding_parameter_dictionary[\"n_$(gene_symbol)_$(connection_symbol)\"]\n"
+            buffer *= "\tK_$(gene_symbol)_$(connection_symbol) = binding_parameter_dictionary[\"K_$(gene_symbol)_$(connection_symbol)\"]\n"
+            buffer *= "\tdG_$(gene_symbol)_$(connection_symbol) = dG_dictionary[\"dG_$(gene_symbol)_$(connection_symbol)\"]\n"
+            buffer *= "\tW_$(gene_symbol)_$(connection_symbol) = exp(-dG_$(gene_symbol)_$(connection_symbol) / RT)\n"
+            buffer *= "\tf_$(gene_symbol)_$(connection_symbol) = (protein_$(connection_symbol)^n_$(gene_symbol)_$(connection_symbol))/(K_$(gene_symbol)_$(connection_symbol)^n_$(gene_symbol)_$(connection_symbol)+protein_$(connection_symbol)^n_$(gene_symbol)_$(connection_symbol))\n"
+            buffer *= "\tdenominator_$(gene_index) += W_$(gene_symbol)_$(connection_symbol)*f_$(gene_symbol)_$(connection_symbol)\n"
+        end
+
+        buffer *= "\tcontrol_array[$(gene_index)] = numerator_$(gene_index) / denominator_$(gene_index)\n"
+        buffer *= "\n"
+    end
+
+    buffer *= "\t# return - \n"
+    buffer *= "\treturn control_array\n"
+    buffer *= "end\n"
+    buffer *= "\n"
+
+    # --- Translation control (Eq. 10): exponential decay of translation capacity --- #
+    buffer *= "# ---- Translation control (Eq. 10): exponential decay of translation capacity ---- #\n"
+    buffer *= "function calculate_translation_control_array(t::Float64,x::Array{Float64,1},data_dictionary::Dict{String,Any})\n"
+    buffer *= "\n"
+    buffer *= "\t# initialize the control - \n"
+    buffer *= "\tcontrol_array = ones($(number_of_genes))\n"
+    buffer *= "\n"
+    buffer *= "\t# Get the translation capacity half-life - \n"
+    buffer *= "\ttau_L_half = data_dictionary[\"tau_L_half\"]\t# hr\n"
+    buffer *= "\n"
+    buffer *= "\t# Compute the translation capacity decay (Eq. 10) - \n"
+    buffer *= "\tepsilon = exp(-0.693 * t / tau_L_half)\n"
+    buffer *= "\n"
+    buffer *= "\t# Apply to all genes - \n"
+    buffer *= "\tfor j in 1:$(number_of_genes)\n"
+    buffer *= "\t\tcontrol_array[j] = epsilon\n"
+    buffer *= "\tend\n"
+    buffer *= "\n"
+    buffer *= "\t# return - \n"
+    buffer *= "\treturn control_array\n"
+    buffer *= "end\n"
+
+    # build the component -
+    program_component::ProgramComponent = ProgramComponent()
+    program_component.filename = filename
+    program_component.buffer = buffer
+
+    # return -
+    return (program_component)
+end
+
+function build_data_dictionary_buffer_effective(problem_object::ProblemObject, host_flag::Symbol)
+
+    filename = "Data.jl"
+
+    # build the header -
+    header_buffer = build_copyright_header_buffer(problem_object)
+
+    # get the comment buffer -
+    comment_header_dictionary = problem_object.configuration_dictionary["function_comment_dictionary"]["data_dictionary_function"]
+    function_comment_buffer = build_function_header_buffer(comment_header_dictionary)
+
+    # get list of species from the po -
+    list_of_species::Array{SpeciesObject} = problem_object.list_of_species
+
+    # initialize the buffer -
+    buffer = ""
+    buffer *= header_buffer
+    buffer *= "#\n"
+    buffer *= function_comment_buffer
+    buffer *= "function build_data_dictionary(time_span::Tuple{Float64,Float64,Float64}, path_to_biophysical_constants_file::String = \"./Default.json\", host_type::Symbol = :cell_free)::Dict{String,Any}\n"
+    buffer *= "\n"
+    buffer *= "\t# load the biophysical_constants dictionary \n"
+    buffer *= "\tbiophysical_constants_dictionary = build_biophysical_dictionary(path_to_biophysical_constants_file, host_type)\n"
+    buffer *= "\n"
+    buffer *= "\t# stoichiometric_matrix and dilution_matrix - \n"
+    buffer *= "\tstoichiometric_matrix = readdlm(\"./Network.dat\")\n"
+    buffer *= "\n"
+    buffer *= "\t# number of states, and rates - \n"
+    buffer *= "\t(number_of_states,number_of_rates) = size(stoichiometric_matrix)\n"
+    buffer *= "\n"
+
+    # species type array -
+    buffer *= "\t# array of species types - \n"
+    buffer *= "\tspecies_symbol_type_array = [\n"
+    for (index, species_object) in enumerate(list_of_species)
+        species_symbol = species_object.species_symbol
+        species_type = species_object.species_type
+        buffer *= "\t\t:$(species_type)\t;\t# $(index)\t$(species_symbol)\n"
+    end
+    buffer *= "\t]\n"
+    buffer *= "\n"
+
+    buffer *= "\t# we need to store the species symbol array for later - \n"
+    buffer *= "\tbiophysical_constants_dictionary[\"species_symbol_type_array\"] = species_symbol_type_array\n"
+    buffer *= "\n"
+
+    # gene coding length array -
+    buffer *= "\t# array of gene lengths - \n"
+    buffer *= "\tgene_coding_length_array = [\n"
+    for (index, species_object) in enumerate(list_of_species)
+        species_symbol = species_object.species_symbol
+        species_type = species_object.species_type
+        if (species_type == :gene)
+            gene_seq_lengths = get(problem_object.configuration_dictionary, "gene_sequence_lengths", Dict{String,Float64}())
+            gene_length = get(gene_seq_lengths, species_symbol, 1000.0)
+            buffer *= "\t\t$(gene_length)\t;\t# $(index)\t$(species_symbol)\n"
+        end
+    end
+    buffer *= "\t]\n"
+    buffer *= "\n"
+
+    # mRNA coding length -
+    buffer *= "\t# array of mRNA coding lengths - \n"
+    buffer *= "\tmRNA_coding_length_array = [\n"
+    counter = 1
+    for (index, species_object) in enumerate(list_of_species)
+        species_symbol = species_object.species_symbol
+        species_type = species_object.species_type
+        if (species_type == :mrna)
+            buffer *= "\t\tgene_coding_length_array[$(counter)]\t;\t# $(index)\t$(counter)\t$(species_symbol)\n"
+            counter = counter + 1
+        end
+    end
+    buffer *= "\t]\n"
+    buffer *= "\n"
+
+    # protein coding length -
+    buffer *= "\t# array of protein coding lengths - \n"
+    buffer *= "\tprotein_coding_length_array = [\n"
+    counter = 1
+    for (index, species_object) in enumerate(list_of_species)
+        species_symbol = species_object.species_symbol
+        species_type = species_object.species_type
+        if (species_type == :protein)
+            protein_seq_lengths = get(problem_object.configuration_dictionary, "protein_sequence_lengths", Dict{String,Float64}())
+            if haskey(protein_seq_lengths, species_symbol)
+                protein_length = protein_seq_lengths[species_symbol]
+                buffer *= "\t\t$(protein_length)\t;\t# $(index)\t$(counter)\t$(species_symbol)\n"
+            else
+                buffer *= "\t\tround((0.33)*mRNA_coding_length_array[$(counter)])\t;\t# $(index)\t$(counter)\t$(species_symbol)\n"
+            end
+            counter = counter + 1
+        end
+    end
+    buffer *= "\t]\n"
+    buffer *= "\n"
+
+    # gene abundance array -
+    buffer *= "\t# array of gene concentrations (muM) - \n"
+    buffer *= "\tgene_abundance_array = [\n"
+    for (index, species_object) in enumerate(list_of_species)
+        species_symbol = species_object.species_symbol
+        species_type = species_object.species_type
+        if (species_type == :gene)
+            buffer *= "\t\t0.005\t;\t# (muM) $(index)\t$(species_symbol)\n"
+        end
+    end
+    buffer *= "\t]\n"
+    buffer *= "\n"
+
+    # initial condition -
+    buffer *= "\t# initial condition array - \n"
+    buffer *= "\tinitial_condition_array = [\n"
+    for (index, species_object) in enumerate(list_of_species)
+        species_symbol = species_object.species_symbol
+        species_type = species_object.species_type
+        if (species_type == :gene)
+            buffer *= "\t\tgene_abundance_array[$(index)]\t;\t# $(index)\t$(species_symbol)\n"
+        elseif (species_type == :mrna || species_type == :protein)
+            buffer *= "\t\t0.0\t;\t# $(index)\t$(species_symbol)\n"
+        end
+    end
+    buffer *= "\t]\n"
+    buffer *= "\n"
+
+    # --- Effective biophysical model parameters (Table 1, Adhikari et al., 2020) --- #
+    buffer *= "\t# ====================================================================================== #\n"
+    buffer *= "\t# Effective biophysical model parameters (Adhikari et al., 2020)\n"
+    buffer *= "\t# ====================================================================================== #\n"
+    buffer *= "\tR_XT = 0.07\t# RNAP concentration (muM)\n"
+    buffer *= "\tR_LT = 2.3\t# ribosome concentration (muM)\n"
+    buffer *= "\tv_X = 25.0\t# transcription elongation rate (nt/s)\n"
+    buffer *= "\tv_L = 1.5\t# translation elongation rate (aa/s)\n"
+    buffer *= "\tK_X = 0.036\t# transcription saturation constant (muM)\n"
+    buffer *= "\tK_L = 450.0\t# translation saturation constant (muM)\n"
+    buffer *= "\tK_P = 10.0\t# polysome amplification factor\n"
+    buffer *= "\ttemperature = 310.15\t# temperature (K) - 37C for cell-free\n"
+    buffer *= "\ttau_L_half = 4.0\t# translation capacity half-life (hr)\n"
+    buffer *= "\n"
+
+    # per-gene time constants -
+    list_of_genes = extract_species_of_type(list_of_species, :gene)
+    list_of_connections::Array{ConnectionObject} = problem_object.list_of_connections
+    number_of_genes = length(list_of_genes)
+
+    buffer *= "\t# Per-gene transcription time constants (dimensionless) - \n"
+    buffer *= "\ttau_X_array = [\n"
+    for (index, gene_object) in enumerate(list_of_genes)
+        gene_symbol = gene_object.species_symbol
+        buffer *= "\t\t0.5\t;\t# $(index)\t$(gene_symbol)\n"
+    end
+    buffer *= "\t]\n"
+    buffer *= "\n"
+
+    buffer *= "\t# Per-gene translation time constants (dimensionless) - \n"
+    buffer *= "\ttau_L_array = [\n"
+    for (index, gene_object) in enumerate(list_of_genes)
+        gene_symbol = gene_object.species_symbol
+        buffer *= "\t\t0.5\t;\t# $(index)\t$(gene_symbol)\n"
+    end
+    buffer *= "\t]\n"
+    buffer *= "\n"
+
+    # per-gene degradation constants -
+    buffer *= "\t# Per-gene mRNA degradation rate constants (hr^-1) - \n"
+    buffer *= "\ttheta_m_array = [\n"
+    for (index, gene_object) in enumerate(list_of_genes)
+        gene_symbol = gene_object.species_symbol
+        buffer *= "\t\t$(round(log(2)/(15.0/60.0); digits=4))\t;\t# $(index)\t$(gene_symbol) (half-life = 15 min)\n"
+    end
+    buffer *= "\t]\n"
+    buffer *= "\n"
+
+    buffer *= "\t# Per-gene protein degradation rate constants (hr^-1) - \n"
+    buffer *= "\ttheta_p_array = [\n"
+    for (index, gene_object) in enumerate(list_of_genes)
+        gene_symbol = gene_object.species_symbol
+        buffer *= "\t\t$(round(log(2)/(10.0*24.0); digits=6))\t;\t# $(index)\t$(gene_symbol) (half-life = 10 days)\n"
+    end
+    buffer *= "\t]\n"
+    buffer *= "\n"
+
+    # free energy dictionary -
+    buffer *= "\t# Free energy dictionary for thermodynamic control (kJ/mol) - \n"
+    buffer *= "\tdG_dictionary = Dict{String,Float64}()\n"
+    for (index, gene_object) in enumerate(list_of_genes)
+
+        gene_symbol = gene_object.species_symbol
+
+        # RNAP binding energy -
+        buffer *= "\tdG_dictionary[\"dG_$(gene_symbol)_RNAP\"] = -30.0\t# RNAP binding energy\n"
+
+        # connections -
+        activating_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :activate)
+        inhibiting_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :inhibit)
+
+        for connection_object in activating_connections
+            connection_symbol = connection_object.connection_symbol
+            buffer *= "\tdG_dictionary[\"dG_$(gene_symbol)_$(connection_symbol)\"] = -20.0\t# activator (RNAP + $(connection_symbol))\n"
+        end
+
+        for connection_object in inhibiting_connections
+            connection_symbol = connection_object.connection_symbol
+            buffer *= "\tdG_dictionary[\"dG_$(gene_symbol)_$(connection_symbol)\"] = 10.0\t# repressor ($(connection_symbol) alone)\n"
+        end
+    end
+    buffer *= "\n"
+
+    # binding parameter dictionary -
+    parameter_value_default_dictionary = problem_object.configuration_dictionary["default_parameter_dictionary"]
+    buffer *= "\t# Binding parameter dictionary (Hill coefficients and dissociation constants) - \n"
+    buffer *= "\tbinding_parameter_dictionary = Dict{String,Float64}()\n"
+    for (index, gene_object) in enumerate(list_of_genes)
+
+        gene_symbol = gene_object.species_symbol
+
+        activating_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :activate)
+        inhibiting_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :inhibit)
+
+        list_of_all_connections = ConnectionObject[]
+        append!(list_of_all_connections, activating_connections)
+        append!(list_of_all_connections, inhibiting_connections)
+        for connection_object in list_of_all_connections
+            connection_symbol = connection_object.connection_symbol
+            buffer *= "\tbinding_parameter_dictionary[\"n_$(gene_symbol)_$(connection_symbol)\"] = 1.5\n"
+            buffer *= "\tbinding_parameter_dictionary[\"K_$(gene_symbol)_$(connection_symbol)\"] = 50.0\t# muM\n"
+        end
+    end
+    buffer *= "\n"
+
+    # control parameter dictionary (needed for compatibility) -
+    buffer *= "\t# Control parameter dictionary - \n"
+    buffer *= "\tcontrol_parameter_dictionary = Dict{String,Float64}()\n"
+    buffer *= "\n"
+
+    # degradation modifiers -
+    buffer *= "\t# degradation modifiers - \n"
+    buffer *= "\tdegradation_modifier_array = [\n"
+    for (index, species_object) in enumerate(list_of_species)
+        species_symbol = species_object.species_symbol
+        species_type = species_object.species_type
+        if (species_type == :gene)
+            buffer *= "\t\t0.0\t;\t# $(index)\t$(species_symbol)\n"
+        elseif (species_type == :mrna || species_type == :protein)
+            buffer *= "\t\t1.0\t;\t# $(index)\t$(species_symbol)\n"
+        end
+    end
+    buffer *= "\t]\n"
+    buffer *= "\n"
+
+    # time constant modifiers -
+    buffer *= "\t# time constant modifiers - \n"
+    buffer *= "\ttime_constant_modifier_array = [\n"
+    for (index, species_object) in enumerate(list_of_species)
+        species_symbol = species_object.species_symbol
+        species_type = species_object.species_type
+        if (species_type == :gene)
+            buffer *= "\t\t0.0\t;\t# $(index)\t$(species_symbol)\n"
+        elseif (species_type == :mrna || species_type == :protein)
+            buffer *= "\t\t1.0\t;\t# $(index)\t$(species_symbol)\n"
+        end
+    end
+    buffer *= "\t]\n"
+    buffer *= "\n"
+
+    # build the degradation matrix -
+    buffer *= "\t# Dilution degrdation matrix - \n"
+    buffer *= "\tdilution_degradation_matrix = build_dilution_degradation_matrix(biophysical_constants_dictionary,species_symbol_type_array,degradation_modifier_array)\n"
+
+    # PTM parameters (if any) -
+    ptm_types = Set([:phosphorylate, :dephosphorylate, :bind, :unbind])
+    ptm_connections = filter(c -> c.connection_type in ptm_types, list_of_connections)
+    if !isempty(ptm_connections)
+        buffer *= "\n"
+        buffer *= "\t# Post-translational modification parameters - \n"
+        buffer *= "\tptm_parameter_dictionary = Dict{String,Float64}()\n"
+
+        for conn in ptm_connections
+            conn_symbol = conn.connection_symbol
+            if conn.connection_type == :phosphorylate || conn.connection_type == :dephosphorylate
+                buffer *= "\tptm_parameter_dictionary[\"kcat_$(conn_symbol)\"] = 10.0\t# hr^-1\n"
+                buffer *= "\tptm_parameter_dictionary[\"Km_$(conn_symbol)\"] = 0.1\t# muM\n"
+            elseif conn.connection_type == :bind
+                buffer *= "\tptm_parameter_dictionary[\"kf_$(conn_symbol)\"] = 1.0\t# muM^-1*hr^-1\n"
+            elseif conn.connection_type == :unbind
+                buffer *= "\tptm_parameter_dictionary[\"kr_$(conn_symbol)\"] = 0.1\t# hr^-1\n"
+            end
+        end
+    end
+
+    # parameter name mapping -
+    buffer *= "\n"
+    buffer *= "\t# Parameter name index array - \n"
+    name_parameter_mapping_buffer = generate_parameter_name_mapping_effective(list_of_genes, list_of_connections)
+    buffer *= name_parameter_mapping_buffer
+
+    # return block -
+    buffer *= "\n"
+    buffer *= "\t# =============================== DO NOT EDIT BELOW THIS LINE ============================== #\n"
+    buffer *= "\tdata_dictionary = Dict{String,Any}()\n"
+    buffer *= "\tdata_dictionary[\"number_of_states\"] = number_of_states\n"
+    buffer *= "\tdata_dictionary[\"species_symbol_type_array\"] = species_symbol_type_array\n"
+    buffer *= "\tdata_dictionary[\"initial_condition_array\"] = initial_condition_array\n"
+    buffer *= "\tdata_dictionary[\"gene_coding_length_array\"] = gene_coding_length_array\n"
+    buffer *= "\tdata_dictionary[\"mRNA_coding_length_array\"] = mRNA_coding_length_array\n"
+    buffer *= "\tdata_dictionary[\"protein_coding_length_array\"] = protein_coding_length_array\n"
+    buffer *= "\tdata_dictionary[\"stoichiometric_matrix\"] = stoichiometric_matrix\n"
+    buffer *= "\tdata_dictionary[\"dilution_degradation_matrix\"] = dilution_degradation_matrix\n"
+    buffer *= "\tdata_dictionary[\"binding_parameter_dictionary\"] = binding_parameter_dictionary\n"
+    buffer *= "\tdata_dictionary[\"control_parameter_dictionary\"] = control_parameter_dictionary\n"
+    buffer *= "\tdata_dictionary[\"parameter_name_mapping_array\"] = parameter_name_mapping_array\n"
+    buffer *= "\tdata_dictionary[\"degradation_modifier_array\"] = degradation_modifier_array\n"
+    buffer *= "\tdata_dictionary[\"time_constant_modifier_array\"] = time_constant_modifier_array\n"
+    buffer *= "\tdata_dictionary[\"biophysical_constants_dictionary\"] = biophysical_constants_dictionary\n"
+    buffer *= "\n"
+    buffer *= "\t# Effective biophysical model parameters - \n"
+    buffer *= "\tdata_dictionary[\"R_XT\"] = R_XT\n"
+    buffer *= "\tdata_dictionary[\"R_LT\"] = R_LT\n"
+    buffer *= "\tdata_dictionary[\"v_X\"] = v_X\n"
+    buffer *= "\tdata_dictionary[\"v_L\"] = v_L\n"
+    buffer *= "\tdata_dictionary[\"K_X\"] = K_X\n"
+    buffer *= "\tdata_dictionary[\"K_L\"] = K_L\n"
+    buffer *= "\tdata_dictionary[\"K_P\"] = K_P\n"
+    buffer *= "\tdata_dictionary[\"temperature\"] = temperature\n"
+    buffer *= "\tdata_dictionary[\"tau_L_half\"] = tau_L_half\n"
+    buffer *= "\tdata_dictionary[\"tau_X_array\"] = tau_X_array\n"
+    buffer *= "\tdata_dictionary[\"tau_L_array\"] = tau_L_array\n"
+    buffer *= "\tdata_dictionary[\"theta_m_array\"] = theta_m_array\n"
+    buffer *= "\tdata_dictionary[\"theta_p_array\"] = theta_p_array\n"
+    buffer *= "\tdata_dictionary[\"dG_dictionary\"] = dG_dictionary\n"
+
+    if !isempty(ptm_connections)
+        buffer *= "\tdata_dictionary[\"ptm_parameter_dictionary\"] = ptm_parameter_dictionary\n"
+    end
+
+    buffer *= "\t# =============================== DO NOT EDIT ABOVE THIS LINE ============================== #\n"
+    buffer *= "\treturn data_dictionary\n"
+    buffer *= "end\n"
+
+    # build the component -
+    program_component::ProgramComponent = ProgramComponent()
+    program_component.filename = filename
+    program_component.buffer = buffer
+
+    # return -
+    return (program_component)
+end
+
+function generate_parameter_name_mapping_effective(list_of_genes::Array{SpeciesObject}, list_of_connections::Array{ConnectionObject})
+
+    # iterate through the list of genes - add names to a string -
+    list_of_names = String[]
+
+    for (index, gene_object) in enumerate(list_of_genes)
+
+        gene_symbol = gene_object.species_symbol
+
+        activating_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :activate)
+        inhibiting_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :inhibit)
+
+        list_of_all_connections = ConnectionObject[]
+        append!(list_of_all_connections, activating_connections)
+        append!(list_of_all_connections, inhibiting_connections)
+        for connection_object in list_of_all_connections
+            connection_symbol = connection_object.connection_symbol
+            push!(list_of_names, "n_$(gene_symbol)_$(connection_symbol)")
+            push!(list_of_names, "K_$(gene_symbol)_$(connection_symbol)")
+        end
+    end
+
+    # free energy parameters -
+    for (index, gene_object) in enumerate(list_of_genes)
+        gene_symbol = gene_object.species_symbol
+
+        push!(list_of_names, "dG_$(gene_symbol)_RNAP")
+
+        activating_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :activate)
+        inhibiting_connections = is_species_a_target_in_connection_list(list_of_connections, gene_object, :inhibit)
+
+        list_of_all_connections = ConnectionObject[]
+        append!(list_of_all_connections, activating_connections)
+        append!(list_of_all_connections, inhibiting_connections)
+        for connection_object in list_of_all_connections
+            connection_symbol = connection_object.connection_symbol
+            push!(list_of_names, "dG_$(gene_symbol)_$(connection_symbol)")
+        end
+    end
+
+    # effective model global parameters -
+    push!(list_of_names, "R_XT")
+    push!(list_of_names, "R_LT")
+    push!(list_of_names, "v_X")
+    push!(list_of_names, "v_L")
+    push!(list_of_names, "K_X")
+    push!(list_of_names, "K_L")
+    push!(list_of_names, "K_P")
+    push!(list_of_names, "tau_L_half")
+    push!(list_of_names, "temperature")
+
+    # per-gene parameters -
+    for (index, gene_object) in enumerate(list_of_genes)
+        gene_symbol = gene_object.species_symbol
+        push!(list_of_names, "tau_X_$(gene_symbol)")
+        push!(list_of_names, "tau_L_$(gene_symbol)")
+        push!(list_of_names, "theta_m_$(gene_symbol)")
+        push!(list_of_names, "theta_p_$(gene_symbol)")
+    end
+
+    buffer = ""
+    buffer *= "\tparameter_name_mapping_array = [\n"
+    for (index, symbol) in enumerate(list_of_names)
+        buffer *= "\t\t\"$(symbol)\"\t;\t# $(index)\n"
+    end
+    buffer *= "\t]\n"
+
+    return buffer
+end
+
+function build_types_buffer_effective()
+
+    filename = "Types.jl"
+
+    buffer = ""
+    buffer *= "# Types for the effective biophysical model\n"
+    buffer *= "# No custom types required - all parameters are stored in data dictionary\n"
+
+    program_component::ProgramComponent = ProgramComponent()
+    program_component.filename = filename
+    program_component.buffer = buffer
+
+    return program_component
+end
